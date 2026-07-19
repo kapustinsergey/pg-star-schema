@@ -1,0 +1,16 @@
+[project]
+name = "pg-star-schema"
+version = "0.1.0"
+description = "Automatically create and manage a star schema on top of existing Postgres tables"
+readme = "README.md"
+authors = [
+    { name = "Sergey Kapustin", email = "kapustin.sergey@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.3.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
