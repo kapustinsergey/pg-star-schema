@@ -1,6 +1,7 @@
 from pg_star_schema.ddl import dimension_table_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns
 from pg_star_schema.naming import dimension_table_name, fact_table_name
+from pg_star_schema.upsert import dimension_upsert_sql
 
 __all__ = [
     "Column",
@@ -9,4 +10,5 @@ __all__ = [
     "fact_table_ddl",
     "dimension_table_name",
     "fact_table_name",
+    "dimension_upsert_sql",
 ]
