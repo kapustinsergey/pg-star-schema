@@ -8,7 +8,9 @@ inserted - no manual ETL.
 
 ## Status
 
-Early, built incrementally. Currently: table introspection (`get_columns`).
+Early, built incrementally. Currently: table introspection, fact/dimension DDL generation,
+and the insert trigger that keeps the star schema in sync. Not yet wired into a single
+entry point that runs all of it against a live database.
 
 ## Install
 
