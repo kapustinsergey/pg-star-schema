@@ -2,15 +2,16 @@
 
 Automatically build and maintain a star schema on top of existing Postgres tables.
 
-Point it at a table you already have; it introspects the columns and (eventually) generates
-the fact/dimension tables and triggers needed to keep a star schema in sync as rows are
+Point it at a table you already have; it introspects the columns and generates the
+fact/dimension tables and the trigger needed to keep a star schema in sync as rows are
 inserted - no manual ETL.
 
 ## Status
 
-Early, built incrementally. Currently: table introspection, fact/dimension DDL generation,
-and the insert trigger that keeps the star schema in sync. Not yet wired into a single
-entry point that runs all of it against a live database.
+Early, built incrementally. `build_star_schema` runs end to end against a live database.
+No backfill yet: only rows inserted after it runs reach the fact table.
+
+Requires Postgres 14 or newer.
 
 ## Install
 
@@ -22,8 +23,19 @@ uv add pg-star-schema
 
 ```python
 import psycopg
-from pg_star_schema import get_columns
+from pg_star_schema import build_star_schema
 
 conn = psycopg.connect("postgresql://localhost/mydb")
-columns = get_columns(conn, "orders")
+build_star_schema(conn, "orders", columns=["customer", "status", "country"])
 ```
+
+That creates `orders_dim_customer`, `orders_dim_status`, `orders_dim_country`, the
+`orders_fact` table holding only surrogate keys, and an after-insert trigger on `orders`
+that resolves each new row into it.
+
+Pick the columns you actually group by. Omitting `columns` dimensions every column, which
+gives a surrogate key or a timestamp one dimension row per fact row - pure overhead.
+
+The lower-level pieces are exported too, if you'd rather generate the SQL and run it
+yourself: `get_columns`, `dimension_table_ddl`, `fact_table_ddl`, `dimension_upsert_sql`,
+`sync_function_ddl`, `sync_trigger_ddl`.
