@@ -8,8 +8,8 @@ inserted - no manual ETL.
 
 ## Status
 
-Early, built incrementally. `build_star_schema` runs end to end against a live database.
-No backfill yet: only rows inserted after it runs reach the fact table.
+Early, built incrementally. `build_star_schema` runs end to end against a live database,
+and `backfill_star_schema` mirrors the rows that existed before it ran.
 
 Requires Postgres 14 or newer.
 
@@ -23,11 +23,17 @@ uv add pg-star-schema
 
 ```python
 import psycopg
-from pg_star_schema import build_star_schema
+from pg_star_schema import backfill_star_schema, build_star_schema
 
 conn = psycopg.connect("postgresql://localhost/mydb")
 build_star_schema(conn, "orders", columns=["customer", "status", "country"])
+backfill_star_schema(conn, "orders", columns=["customer", "status", "country"])
 ```
+
+`backfill_star_schema` fills the dimensions from the existing distinct values and mirrors
+every existing source row into the fact table (NULL values become NULL surrogate keys).
+Call it once, right after `build_star_schema` - the fact table has no natural key, so a
+second backfill would duplicate rows.
 
 That creates `orders_dim_customer`, `orders_dim_status`, `orders_dim_country`, the
 `orders_fact` table holding only surrogate keys, and an after-insert trigger on `orders`
