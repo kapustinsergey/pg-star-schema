@@ -8,14 +8,26 @@ from pg_star_schema.naming import (
     sync_function_name,
     sync_trigger_name,
 )
+from pg_star_schema.teardown import (
+    drop_dimension_table_ddl,
+    drop_fact_table_ddl,
+    drop_function_ddl,
+    drop_star_schema,
+    drop_trigger_ddl,
+)
 from pg_star_schema.trigger import sync_function_ddl, sync_trigger_ddl
 from pg_star_schema.upsert import dimension_upsert_sql
 
 __all__ = [
     "build_star_schema",
     "backfill_star_schema",
+    "drop_star_schema",
     "dimension_backfill_sql",
     "fact_backfill_sql",
+    "drop_trigger_ddl",
+    "drop_function_ddl",
+    "drop_fact_table_ddl",
+    "drop_dimension_table_ddl",
     "Column",
     "get_columns",
     "dimension_table_ddl",

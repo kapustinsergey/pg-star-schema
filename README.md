@@ -9,7 +9,8 @@ inserted - no manual ETL.
 ## Status
 
 Early, built incrementally. `build_star_schema` runs end to end against a live database,
-and `backfill_star_schema` mirrors the rows that existed before it ran.
+`backfill_star_schema` mirrors the rows that existed before it ran, and
+`drop_star_schema` removes everything again.
 
 Requires Postgres 14 or newer.
 
@@ -42,6 +43,10 @@ that resolves each new row into it.
 Pick the columns you actually group by. Omitting `columns` dimensions every column, which
 gives a surrogate key or a timestamp one dimension row per fact row - pure overhead.
 
+To undo it all, `drop_star_schema(conn, "orders")` drops the trigger, the sync function,
+the fact table, and the dimension tables - the source table is never touched. If the
+source table is already gone, pass `columns=` to name the dimension tables to drop.
+
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `get_columns`, `dimension_table_ddl`, `fact_table_ddl`, `dimension_upsert_sql`,
-`sync_function_ddl`, `sync_trigger_ddl`.
+`sync_function_ddl`, `sync_trigger_ddl`, and the `drop_*_ddl` counterparts.
