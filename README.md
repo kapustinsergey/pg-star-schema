@@ -48,5 +48,5 @@ the fact table, and the dimension tables - the source table is never touched. If
 source table is already gone, pass `columns=` to name the dimension tables to drop.
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
-yourself: `get_columns`, `dimension_table_ddl`, `fact_table_ddl`, `dimension_upsert_sql`,
+yourself: `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`, `dimension_upsert_sql`,
 `sync_function_ddl`, `sync_trigger_ddl`, and the `drop_*_ddl` counterparts.
