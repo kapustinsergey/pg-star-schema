@@ -33,12 +33,15 @@ backfill_star_schema(conn, "orders", columns=["customer", "status", "country"])
 
 `backfill_star_schema` fills the dimensions from the existing distinct values and mirrors
 every existing source row into the fact table (NULL values become NULL surrogate keys).
-Call it once, right after `build_star_schema` - the fact table has no natural key, so a
-second backfill would duplicate rows.
+When the source table has a primary key the backfill is idempotent - already-mirrored
+rows are skipped on a re-run. Without one, call it exactly once, right after
+`build_star_schema` - a second backfill would duplicate rows.
 
 That creates `orders_dim_customer`, `orders_dim_status`, `orders_dim_country`, the
-`orders_fact` table holding only surrogate keys, and an after-insert trigger on `orders`
-that resolves each new row into it.
+`orders_fact` table holding the surrogate keys, and an after-insert trigger on `orders`
+that resolves each new row into it. When `orders` has a primary key, each fact row also
+carries it in `source_<column>` columns (unique together), linking it to the source row
+it mirrors.
 
 Pick the columns you actually group by. Omitting `columns` dimensions every column, which
 gives a surrogate key or a timestamp one dimension row per fact row - pure overhead.

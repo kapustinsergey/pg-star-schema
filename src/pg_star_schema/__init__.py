@@ -5,6 +5,7 @@ from pg_star_schema.introspect import Column, get_columns, get_primary_key
 from pg_star_schema.naming import (
     dimension_table_name,
     fact_table_name,
+    source_key_column_name,
     sync_function_name,
     sync_trigger_name,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "fact_table_ddl",
     "dimension_table_name",
     "fact_table_name",
+    "source_key_column_name",
     "dimension_upsert_sql",
     "sync_function_ddl",
     "sync_trigger_ddl",

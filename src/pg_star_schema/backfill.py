@@ -1,8 +1,8 @@
 import psycopg
 from psycopg import sql
 
-from pg_star_schema.introspect import Column, get_columns
-from pg_star_schema.naming import dimension_table_name, fact_table_name
+from pg_star_schema.introspect import Column, get_columns, get_primary_key
+from pg_star_schema.naming import dimension_table_name, fact_table_name, source_key_column_name
 
 
 def dimension_backfill_sql(table: str, column: str, schema: str = "public") -> sql.Composed:
@@ -23,15 +23,26 @@ def dimension_backfill_sql(table: str, column: str, schema: str = "public") -> s
     )
 
 
-def fact_backfill_sql(table: str, columns: list[Column], schema: str = "public") -> sql.Composed:
+def fact_backfill_sql(
+    table: str,
+    columns: list[Column],
+    schema: str = "public",
+    key_columns: list[Column] | None = None,
+) -> sql.Composed:
     """SQL mirroring every existing source row into the fact table.
 
     Left-joins each dimension on the source value, so a NULL source value
     becomes a NULL surrogate key - same rows the insert trigger would have
     produced had it been active from the start.
 
-    NOTE: the fact table has no natural key, so running this twice duplicates
-    rows. Call it exactly once, right after build_star_schema.
+    `key_columns` is the source table's primary key; when given, each fact row
+    also stores it in the `source_<column>` columns and the insert becomes
+    `on conflict do nothing` on that key - re-running skips rows already
+    mirrored instead of duplicating them.
+
+    NOTE: without `key_columns` the fact table has no natural key, so running
+    this twice duplicates rows - call it exactly once, right after
+    build_star_schema.
     """
     joins = [
         sql.SQL("left join {schema}.{dim} {alias} on {alias}.value = s.{column}").format(
@@ -42,15 +53,30 @@ def fact_backfill_sql(table: str, columns: list[Column], schema: str = "public")
         )
         for column in columns
     ]
-    return sql.SQL("insert into {schema}.{fact} ({fk_columns}) select {ids} from {schema}.{table} s {joins}").format(
+    insert_columns = [sql.Identifier(f"{column.name}_id") for column in columns]
+    select_exprs: list[sql.Composable] = [
+        sql.SQL("{alias}.id").format(alias=sql.Identifier(f"d_{column.name}")) for column in columns
+    ]
+    for key in key_columns or []:
+        insert_columns.append(sql.Identifier(source_key_column_name(key.name)))
+        select_exprs.append(sql.SQL("s.{column}").format(column=sql.Identifier(key.name)))
+    conflict = sql.SQL("")
+    if key_columns:
+        conflict = sql.SQL(" on conflict ({key_names}) do nothing").format(
+            key_names=sql.SQL(", ").join(
+                sql.Identifier(source_key_column_name(key.name)) for key in key_columns
+            )
+        )
+    return sql.SQL(
+        "insert into {schema}.{fact} ({insert_columns}) select {select_exprs} from {schema}.{table} s {joins}{conflict}"
+    ).format(
         schema=sql.Identifier(schema),
         fact=sql.Identifier(fact_table_name(table)),
-        fk_columns=sql.SQL(", ").join(sql.Identifier(f"{column.name}_id") for column in columns),
-        ids=sql.SQL(", ").join(
-            sql.SQL("{alias}.id").format(alias=sql.Identifier(f"d_{column.name}")) for column in columns
-        ),
+        insert_columns=sql.SQL(", ").join(insert_columns),
+        select_exprs=sql.SQL(", ").join(select_exprs),
         table=sql.Identifier(table),
         joins=sql.SQL(" ").join(joins),
+        conflict=conflict,
     )
 
 
@@ -63,17 +89,19 @@ def backfill_star_schema(
     """Mirror the source table's existing rows into an already-built star schema.
 
     Pass the same `columns` selection that was given to build_star_schema.
-    Runs in one transaction: dimensions first, then the fact rows. One-shot -
-    see fact_backfill_sql for why running it twice duplicates fact rows.
+    Runs in one transaction: dimensions first, then the fact rows. When the
+    source table has a primary key this is idempotent - already-mirrored rows
+    are skipped; without one it is one-shot, see fact_backfill_sql.
     """
     all_columns = get_columns(conn, table, schema)
+    by_name = {column.name: column for column in all_columns}
     if columns is None:
         dimensioned = all_columns
     else:
-        by_name = {column.name: column for column in all_columns}
         dimensioned = [by_name[name] for name in columns]
+    key_columns = [by_name[name] for name in get_primary_key(conn, table, schema)]
 
     with conn.transaction(), conn.cursor() as cur:
         for column in dimensioned:
             cur.execute(dimension_backfill_sql(table, column.name, schema))
-        cur.execute(fact_backfill_sql(table, dimensioned, schema))
+        cur.execute(fact_backfill_sql(table, dimensioned, schema, key_columns=key_columns))

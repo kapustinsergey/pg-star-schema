@@ -1,7 +1,7 @@
 import psycopg
 
 from pg_star_schema.ddl import dimension_table_ddl, fact_table_ddl
-from pg_star_schema.introspect import Column, get_columns
+from pg_star_schema.introspect import Column, get_columns, get_primary_key
 from pg_star_schema.trigger import sync_function_ddl, sync_trigger_ddl
 
 
@@ -25,7 +25,9 @@ def build_star_schema(
 
     Introspects the source table, then creates one dimension table per dimensioned
     column, the fact table referencing them, and the after-insert trigger that
-    mirrors each new row. Returns the columns that were dimensioned.
+    mirrors each new row. Returns the columns that were dimensioned. When the
+    source table has a primary key, each fact row also carries it in
+    `source_<column>` columns, linking it to the source row it mirrors.
 
     `columns` selects which columns become dimensions; the default is every column,
     which is rarely what you want on a real table - a surrogate key or a timestamp
@@ -45,12 +47,14 @@ def build_star_schema(
     dimensioned = _resolve(all_columns, columns)
     if not dimensioned:
         raise ValueError("at least one column must be dimensioned")
+    by_name = {column.name: column for column in all_columns}
+    key_columns = [by_name[name] for name in get_primary_key(conn, table, schema)]
 
     with conn.transaction(), conn.cursor() as cur:
         for column in dimensioned:
             cur.execute(dimension_table_ddl(table, column, schema))
-        cur.execute(fact_table_ddl(table, dimensioned, schema))
-        cur.execute(sync_function_ddl(table, dimensioned, schema))
+        cur.execute(fact_table_ddl(table, dimensioned, schema, key_columns=key_columns))
+        cur.execute(sync_function_ddl(table, dimensioned, schema, key_columns=key_columns))
         cur.execute(sync_trigger_ddl(table, schema))
 
     return dimensioned
