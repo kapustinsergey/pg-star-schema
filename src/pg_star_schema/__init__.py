@@ -1,6 +1,6 @@
 from pg_star_schema.backfill import backfill_star_schema, dimension_backfill_sql, fact_backfill_sql
 from pg_star_schema.build import build_star_schema
-from pg_star_schema.ddl import dimension_table_ddl, fact_table_ddl
+from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
 from pg_star_schema.naming import (
     dimension_table_name,
@@ -34,6 +34,7 @@ __all__ = [
     "get_primary_key",
     "dimension_table_ddl",
     "fact_table_ddl",
+    "fact_index_ddl",
     "dimension_table_name",
     "fact_table_name",
     "source_key_column_name",

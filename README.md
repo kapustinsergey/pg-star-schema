@@ -38,8 +38,8 @@ rows are skipped on a re-run. Without one, call it exactly once, right after
 `build_star_schema` - a second backfill would duplicate rows.
 
 That creates `orders_dim_customer`, `orders_dim_status`, `orders_dim_country`, the
-`orders_fact` table holding the surrogate keys, and an after-insert trigger on `orders`
-that resolves each new row into it. When `orders` has a primary key, each fact row also
+`orders_fact` table holding the surrogate keys (each one indexed), and an after-insert
+trigger on `orders` that resolves each new row into it. When `orders` has a primary key, each fact row also
 carries it in `source_<column>` columns (unique together), linking it to the source row
 it mirrors.
 
@@ -51,5 +51,5 @@ the fact table, and the dimension tables - the source table is never touched. If
 source table is already gone, pass `columns=` to name the dimension tables to drop.
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
-yourself: `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`, `dimension_upsert_sql`,
+yourself: `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`, `fact_index_ddl`, `dimension_upsert_sql`,
 `sync_function_ddl`, `sync_trigger_ddl`, and the `drop_*_ddl` counterparts.

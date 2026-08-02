@@ -67,3 +67,18 @@ def fact_table_ddl(
         name=sql.Identifier(name),
         parts=sql.SQL(", ").join(parts),
     )
+
+
+def fact_index_ddl(table: str, column: Column, schema: str = "public") -> sql.Composed:
+    """DDL for the index on one dimension FK column of the fact table.
+
+    Star queries join the fact table to a dimension and filter or group on it;
+    the index lets those joins seek instead of scanning the fact table.
+    """
+    fact = fact_table_name(table)
+    return sql.SQL("create index if not exists {index} on {schema}.{fact} ({fk_name})").format(
+        index=sql.Identifier(f"{fact}_{column.name}_id_idx"),
+        schema=sql.Identifier(schema),
+        fact=sql.Identifier(fact),
+        fk_name=sql.Identifier(f"{column.name}_id"),
+    )
