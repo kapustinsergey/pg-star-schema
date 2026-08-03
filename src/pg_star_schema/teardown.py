@@ -5,6 +5,8 @@ from pg_star_schema.introspect import get_columns
 from pg_star_schema.naming import (
     dimension_table_name,
     fact_table_name,
+    sync_delete_function_name,
+    sync_delete_trigger_name,
     sync_function_name,
     sync_trigger_name,
 )
@@ -23,11 +25,31 @@ def drop_trigger_ddl(table: str, schema: str = "public") -> sql.Composed:
     )
 
 
+def drop_delete_trigger_ddl(table: str, schema: str = "public") -> sql.Composed:
+    """DDL dropping the delete-sync trigger from the source table, if it exists.
+
+    NOTE: same as drop_trigger_ddl - only run while the source table exists.
+    """
+    return sql.SQL("drop trigger if exists {name} on {schema}.{table}").format(
+        name=sql.Identifier(sync_delete_trigger_name(table)),
+        schema=sql.Identifier(schema),
+        table=sql.Identifier(table),
+    )
+
+
 def drop_function_ddl(table: str, schema: str = "public") -> sql.Composed:
     """DDL dropping the sync trigger function, if it exists."""
     return sql.SQL("drop function if exists {schema}.{name}()").format(
         schema=sql.Identifier(schema),
         name=sql.Identifier(sync_function_name(table)),
+    )
+
+
+def drop_delete_function_ddl(table: str, schema: str = "public") -> sql.Composed:
+    """DDL dropping the delete-sync trigger function, if it exists."""
+    return sql.SQL("drop function if exists {schema}.{name}()").format(
+        schema=sql.Identifier(schema),
+        name=sql.Identifier(sync_delete_function_name(table)),
     )
 
 
@@ -79,7 +101,9 @@ def drop_star_schema(
     with conn.transaction(), conn.cursor() as cur:
         if source_columns:
             cur.execute(drop_trigger_ddl(table, schema))
+            cur.execute(drop_delete_trigger_ddl(table, schema))
         cur.execute(drop_function_ddl(table, schema))
+        cur.execute(drop_delete_function_ddl(table, schema))
         cur.execute(drop_fact_table_ddl(table, schema))
         for name in columns:
             cur.execute(drop_dimension_table_ddl(table, name, schema))

@@ -3,8 +3,8 @@
 Automatically build and maintain a star schema on top of existing Postgres tables.
 
 Point it at a table you already have; it introspects the columns and generates the
-fact/dimension tables and the trigger needed to keep a star schema in sync as rows are
-inserted - no manual ETL.
+fact/dimension tables and the triggers needed to keep a star schema in sync as rows are
+inserted and deleted - no manual ETL.
 
 ## Status
 
@@ -39,17 +39,19 @@ rows are skipped on a re-run. Without one, call it exactly once, right after
 
 That creates `orders_dim_customer`, `orders_dim_status`, `orders_dim_country`, the
 `orders_fact` table holding the surrogate keys (each one indexed), and an after-insert
-trigger on `orders` that resolves each new row into it. When `orders` has a primary key, each fact row also
-carries it in `source_<column>` columns (unique together), linking it to the source row
-it mirrors.
+trigger on `orders` that resolves each new row into it. When `orders` has a primary
+key, each fact row also carries it in `source_<column>` columns (unique together),
+linking it to the source row it mirrors, and an after-delete trigger removes the fact
+row when its source row is deleted.
 
 Pick the columns you actually group by. Omitting `columns` dimensions every column, which
 gives a surrogate key or a timestamp one dimension row per fact row - pure overhead.
 
-To undo it all, `drop_star_schema(conn, "orders")` drops the trigger, the sync function,
-the fact table, and the dimension tables - the source table is never touched. If the
+To undo it all, `drop_star_schema(conn, "orders")` drops the triggers, the sync
+functions, the fact table, and the dimension tables - the source table is never touched. If the
 source table is already gone, pass `columns=` to name the dimension tables to drop.
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`, `fact_index_ddl`, `dimension_upsert_sql`,
-`sync_function_ddl`, `sync_trigger_ddl`, and the `drop_*_ddl` counterparts.
+`sync_function_ddl`, `sync_trigger_ddl`, `sync_delete_function_ddl`,
+`sync_delete_trigger_ddl`, and the `drop_*_ddl` counterparts.

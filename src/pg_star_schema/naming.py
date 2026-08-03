@@ -16,3 +16,11 @@ def sync_function_name(table: str) -> str:
 
 def sync_trigger_name(table: str) -> str:
     return f"{table}_sync_trigger"
+
+
+def sync_delete_function_name(table: str) -> str:
+    return f"{table}_sync_delete"
+
+
+def sync_delete_trigger_name(table: str) -> str:
+    return f"{table}_sync_delete_trigger"

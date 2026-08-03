@@ -4,6 +4,8 @@ from pg_star_schema.introspect import Column
 from pg_star_schema.naming import (
     fact_table_name,
     source_key_column_name,
+    sync_delete_function_name,
+    sync_delete_trigger_name,
     sync_function_name,
     sync_trigger_name,
 )
@@ -63,6 +65,58 @@ def sync_function_ddl(
         schema=sql.Identifier(schema),
         name=sql.Identifier(sync_function_name(table)),
         body=body,
+    )
+
+
+def sync_delete_function_ddl(
+    table: str,
+    key_columns: list[Column],
+    schema: str = "public",
+) -> sql.Composed:
+    """DDL for the plpgsql function that removes a deleted source row's fact row.
+
+    Matches the fact row through its `source_<column>` key, so the fact table
+    must carry the source primary key - pass the same `key_columns` the fact
+    table was created with. Dimension rows stay in place: other fact rows may
+    reference them.
+    """
+    if not key_columns:
+        raise ValueError("key_columns must name the source table's primary key")
+    conditions = sql.SQL(" and ").join(
+        sql.SQL("{source_column} = old.{key}").format(
+            source_column=sql.Identifier(source_key_column_name(key.name)),
+            key=sql.Identifier(key.name),
+        )
+        for key in key_columns
+    )
+    body = sql.SQL("begin delete from {schema}.{fact} where {conditions}; return old; end;").format(
+        schema=sql.Identifier(schema),
+        fact=sql.Identifier(fact_table_name(table)),
+        conditions=conditions,
+    )
+    return sql.SQL("create or replace function {schema}.{name}() returns trigger language plpgsql as $$ {body} $$").format(
+        schema=sql.Identifier(schema),
+        name=sql.Identifier(sync_delete_function_name(table)),
+        body=body,
+    )
+
+
+def sync_delete_trigger_ddl(table: str, schema: str = "public") -> sql.Composed:
+    """DDL binding the delete-sync function to the source table.
+
+    After-delete, so the fact row disappears in the same transaction as its
+    source row.
+
+    NOTE: `create or replace trigger` requires Postgres 14 or newer.
+    """
+    return sql.SQL(
+        "create or replace trigger {trigger} after delete on {schema}.{table} "
+        "for each row execute function {schema}.{function}()"
+    ).format(
+        trigger=sql.Identifier(sync_delete_trigger_name(table)),
+        schema=sql.Identifier(schema),
+        table=sql.Identifier(table),
+        function=sql.Identifier(sync_delete_function_name(table)),
     )
 
 

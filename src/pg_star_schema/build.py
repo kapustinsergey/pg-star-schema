@@ -2,7 +2,12 @@ import psycopg
 
 from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
-from pg_star_schema.trigger import sync_function_ddl, sync_trigger_ddl
+from pg_star_schema.trigger import (
+    sync_delete_function_ddl,
+    sync_delete_trigger_ddl,
+    sync_function_ddl,
+    sync_trigger_ddl,
+)
 
 
 def _resolve(all_columns: list[Column], names: list[str] | None) -> list[Column]:
@@ -27,7 +32,8 @@ def build_star_schema(
     column, the fact table referencing them, and the after-insert trigger that
     mirrors each new row. Returns the columns that were dimensioned. When the
     source table has a primary key, each fact row also carries it in
-    `source_<column>` columns, linking it to the source row it mirrors.
+    `source_<column>` columns, linking it to the source row it mirrors, and an
+    after-delete trigger removes the fact row when its source row is deleted.
 
     `columns` selects which columns become dimensions; the default is every column,
     which is rarely what you want on a real table - a surrogate key or a timestamp
@@ -58,5 +64,8 @@ def build_star_schema(
             cur.execute(fact_index_ddl(table, column, schema))
         cur.execute(sync_function_ddl(table, dimensioned, schema, key_columns=key_columns))
         cur.execute(sync_trigger_ddl(table, schema))
+        if key_columns:
+            cur.execute(sync_delete_function_ddl(table, key_columns, schema))
+            cur.execute(sync_delete_trigger_ddl(table, schema))
 
     return dimensioned
