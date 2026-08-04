@@ -9,6 +9,8 @@ from pg_star_schema.naming import (
     sync_delete_trigger_name,
     sync_function_name,
     sync_trigger_name,
+    sync_update_function_name,
+    sync_update_trigger_name,
 )
 
 
@@ -20,6 +22,18 @@ def drop_trigger_ddl(table: str, schema: str = "public") -> sql.Composed:
     """
     return sql.SQL("drop trigger if exists {name} on {schema}.{table}").format(
         name=sql.Identifier(sync_trigger_name(table)),
+        schema=sql.Identifier(schema),
+        table=sql.Identifier(table),
+    )
+
+
+def drop_update_trigger_ddl(table: str, schema: str = "public") -> sql.Composed:
+    """DDL dropping the update-sync trigger from the source table, if it exists.
+
+    NOTE: same as drop_trigger_ddl - only run while the source table exists.
+    """
+    return sql.SQL("drop trigger if exists {name} on {schema}.{table}").format(
+        name=sql.Identifier(sync_update_trigger_name(table)),
         schema=sql.Identifier(schema),
         table=sql.Identifier(table),
     )
@@ -42,6 +56,14 @@ def drop_function_ddl(table: str, schema: str = "public") -> sql.Composed:
     return sql.SQL("drop function if exists {schema}.{name}()").format(
         schema=sql.Identifier(schema),
         name=sql.Identifier(sync_function_name(table)),
+    )
+
+
+def drop_update_function_ddl(table: str, schema: str = "public") -> sql.Composed:
+    """DDL dropping the update-sync trigger function, if it exists."""
+    return sql.SQL("drop function if exists {schema}.{name}()").format(
+        schema=sql.Identifier(schema),
+        name=sql.Identifier(sync_update_function_name(table)),
     )
 
 
@@ -101,8 +123,10 @@ def drop_star_schema(
     with conn.transaction(), conn.cursor() as cur:
         if source_columns:
             cur.execute(drop_trigger_ddl(table, schema))
+            cur.execute(drop_update_trigger_ddl(table, schema))
             cur.execute(drop_delete_trigger_ddl(table, schema))
         cur.execute(drop_function_ddl(table, schema))
+        cur.execute(drop_update_function_ddl(table, schema))
         cur.execute(drop_delete_function_ddl(table, schema))
         cur.execute(drop_fact_table_ddl(table, schema))
         for name in columns:

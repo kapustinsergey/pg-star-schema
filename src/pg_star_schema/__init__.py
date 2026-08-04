@@ -10,10 +10,14 @@ from pg_star_schema.naming import (
     sync_delete_trigger_name,
     sync_function_name,
     sync_trigger_name,
+    sync_update_function_name,
+    sync_update_trigger_name,
 )
 from pg_star_schema.teardown import (
     drop_delete_function_ddl,
     drop_delete_trigger_ddl,
+    drop_update_function_ddl,
+    drop_update_trigger_ddl,
     drop_dimension_table_ddl,
     drop_fact_table_ddl,
     drop_function_ddl,
@@ -25,6 +29,8 @@ from pg_star_schema.trigger import (
     sync_delete_trigger_ddl,
     sync_function_ddl,
     sync_trigger_ddl,
+    sync_update_function_ddl,
+    sync_update_trigger_ddl,
 )
 from pg_star_schema.upsert import dimension_upsert_sql
 
@@ -36,6 +42,8 @@ __all__ = [
     "fact_backfill_sql",
     "drop_trigger_ddl",
     "drop_delete_trigger_ddl",
+    "drop_update_trigger_ddl",
+    "drop_update_function_ddl",
     "drop_delete_function_ddl",
     "drop_function_ddl",
     "drop_fact_table_ddl",
@@ -50,10 +58,14 @@ __all__ = [
     "fact_table_name",
     "source_key_column_name",
     "dimension_upsert_sql",
+    "sync_update_function_ddl",
+    "sync_update_trigger_ddl",
     "sync_delete_function_ddl",
     "sync_delete_trigger_ddl",
     "sync_function_ddl",
     "sync_trigger_ddl",
+    "sync_update_function_name",
+    "sync_update_trigger_name",
     "sync_delete_function_name",
     "sync_delete_trigger_name",
     "sync_function_name",

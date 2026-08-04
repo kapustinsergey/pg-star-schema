@@ -8,6 +8,8 @@ from pg_star_schema.naming import (
     sync_delete_trigger_name,
     sync_function_name,
     sync_trigger_name,
+    sync_update_function_name,
+    sync_update_trigger_name,
 )
 from pg_star_schema.upsert import dimension_upsert_sql
 
@@ -65,6 +67,96 @@ def sync_function_ddl(
         schema=sql.Identifier(schema),
         name=sql.Identifier(sync_function_name(table)),
         body=body,
+    )
+
+
+def sync_update_function_ddl(
+    table: str,
+    columns: list[Column],
+    key_columns: list[Column],
+    schema: str = "public",
+) -> sql.Composed:
+    """DDL for the plpgsql function that re-points a fact row after a source update.
+
+    Resolves each dimensioned column of the new row to a surrogate key via the
+    dimension upsert (new values get a dimension row), then updates the fact row
+    matched through the old `source_<column>` key. The source key columns are
+    written from the new row too, so a primary key change carries through. Pass
+    the same `columns` and `key_columns` the fact table was created with.
+
+    A source row without a fact row (inserted before the star schema existed and
+    never backfilled) matches nothing and stays unmirrored. Dimension rows the
+    old value pointed to stay in place.
+    """
+    if not key_columns:
+        raise ValueError("key_columns must name the source table's primary key")
+    declarations = [
+        sql.SQL("{var} bigint;").format(var=sql.Identifier(_variable_name(column)))
+        for column in columns
+    ]
+    upserts = [
+        dimension_upsert_sql(
+            table,
+            column.name,
+            schema,
+            value_expr=sql.SQL("new.{column}").format(column=sql.Identifier(column.name)),
+            into=_variable_name(column),
+        )
+        for column in columns
+    ]
+    assignments = [
+        sql.SQL("{fk_name} = {var}").format(
+            fk_name=sql.Identifier(f"{column.name}_id"),
+            var=sql.Identifier(_variable_name(column)),
+        )
+        for column in columns
+    ] + [
+        sql.SQL("{source_column} = new.{key}").format(
+            source_column=sql.Identifier(source_key_column_name(key.name)),
+            key=sql.Identifier(key.name),
+        )
+        for key in key_columns
+    ]
+    conditions = sql.SQL(" and ").join(
+        sql.SQL("{source_column} = old.{key}").format(
+            source_column=sql.Identifier(source_key_column_name(key.name)),
+            key=sql.Identifier(key.name),
+        )
+        for key in key_columns
+    )
+    fact_update = sql.SQL("update {schema}.{fact} set {assignments} where {conditions}").format(
+        schema=sql.Identifier(schema),
+        fact=sql.Identifier(fact_table_name(table)),
+        assignments=sql.SQL(", ").join(assignments),
+        conditions=conditions,
+    )
+    body = sql.SQL("declare {declarations} begin {statements}; return new; end;").format(
+        declarations=sql.SQL(" ").join(declarations),
+        statements=sql.SQL("; ").join([*upserts, fact_update]),
+    )
+    return sql.SQL("create or replace function {schema}.{name}() returns trigger language plpgsql as $$ {body} $$").format(
+        schema=sql.Identifier(schema),
+        name=sql.Identifier(sync_update_function_name(table)),
+        body=body,
+    )
+
+
+def sync_update_trigger_ddl(table: str, schema: str = "public") -> sql.Composed:
+    """DDL binding the update-sync function to the source table.
+
+    After-update, so the fact row is re-pointed in the same transaction as the
+    source change.
+
+    NOTE: `create or replace trigger` requires Postgres 14 or newer.
+    """
+    return sql.SQL(
+        "create or replace trigger {trigger} after update on {schema}.{table} "
+        "for each row execute function {schema}.{function}()"
+    ).format(
+        trigger=sql.Identifier(sync_update_trigger_name(table)),
+        schema=sql.Identifier(schema),
+        table=sql.Identifier(table),
+        function=sql.Identifier(sync_update_function_name(table)),
     )
 
 

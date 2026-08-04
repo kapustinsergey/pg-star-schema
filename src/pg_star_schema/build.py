@@ -7,6 +7,8 @@ from pg_star_schema.trigger import (
     sync_delete_trigger_ddl,
     sync_function_ddl,
     sync_trigger_ddl,
+    sync_update_function_ddl,
+    sync_update_trigger_ddl,
 )
 
 
@@ -32,8 +34,9 @@ def build_star_schema(
     column, the fact table referencing them, and the after-insert trigger that
     mirrors each new row. Returns the columns that were dimensioned. When the
     source table has a primary key, each fact row also carries it in
-    `source_<column>` columns, linking it to the source row it mirrors, and an
-    after-delete trigger removes the fact row when its source row is deleted.
+    `source_<column>` columns, linking it to the source row it mirrors; an
+    after-update trigger re-points the fact row when its source row changes and
+    an after-delete trigger removes it when the source row is deleted.
 
     `columns` selects which columns become dimensions; the default is every column,
     which is rarely what you want on a real table - a surrogate key or a timestamp
@@ -65,6 +68,8 @@ def build_star_schema(
         cur.execute(sync_function_ddl(table, dimensioned, schema, key_columns=key_columns))
         cur.execute(sync_trigger_ddl(table, schema))
         if key_columns:
+            cur.execute(sync_update_function_ddl(table, dimensioned, key_columns, schema))
+            cur.execute(sync_update_trigger_ddl(table, schema))
             cur.execute(sync_delete_function_ddl(table, key_columns, schema))
             cur.execute(sync_delete_trigger_ddl(table, schema))
 

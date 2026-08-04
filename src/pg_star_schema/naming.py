@@ -18,6 +18,14 @@ def sync_trigger_name(table: str) -> str:
     return f"{table}_sync_trigger"
 
 
+def sync_update_function_name(table: str) -> str:
+    return f"{table}_sync_update"
+
+
+def sync_update_trigger_name(table: str) -> str:
+    return f"{table}_sync_update_trigger"
+
+
 def sync_delete_function_name(table: str) -> str:
     return f"{table}_sync_delete"
 
