@@ -1,4 +1,5 @@
 import psycopg
+from psycopg import sql
 
 from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
@@ -20,6 +21,30 @@ def _resolve(all_columns: list[Column], names: list[str] | None) -> list[Column]
     if missing:
         raise ValueError(f"no such column(s) on the source table: {', '.join(missing)}")
     return [by_name[name] for name in names]
+
+
+def build_statements(
+    table: str,
+    dimensioned: list[Column],
+    key_columns: list[Column],
+    schema: str = "public",
+) -> list[sql.Composed]:
+    """The statements build_star_schema executes, in order. Pure - no database.
+
+    Introspect `dimensioned` and `key_columns` yourself (get_columns,
+    get_primary_key) or construct the Column values directly.
+    """
+    statements = [dimension_table_ddl(table, column, schema) for column in dimensioned]
+    statements.append(fact_table_ddl(table, dimensioned, schema, key_columns=key_columns))
+    statements.extend(fact_index_ddl(table, column, schema) for column in dimensioned)
+    statements.append(sync_function_ddl(table, dimensioned, schema))
+    statements.append(sync_trigger_ddl(table, schema))
+    if key_columns:
+        statements.append(sync_update_function_ddl(table, dimensioned, key_columns, schema))
+        statements.append(sync_update_trigger_ddl(table, schema))
+        statements.append(sync_delete_function_ddl(table, key_columns, schema))
+        statements.append(sync_delete_trigger_ddl(table, schema))
+    return statements
 
 
 def build_star_schema(

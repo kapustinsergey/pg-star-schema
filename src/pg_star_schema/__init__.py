@@ -1,5 +1,10 @@
-from pg_star_schema.backfill import backfill_star_schema, dimension_backfill_sql, fact_backfill_sql
-from pg_star_schema.build import build_star_schema
+from pg_star_schema.backfill import (
+    backfill_star_schema,
+    backfill_statements,
+    dimension_backfill_sql,
+    fact_backfill_sql,
+)
+from pg_star_schema.build import build_star_schema, build_statements
 from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
 from pg_star_schema.naming import (
@@ -22,6 +27,7 @@ from pg_star_schema.teardown import (
     drop_fact_table_ddl,
     drop_function_ddl,
     drop_star_schema,
+    drop_statements,
     drop_trigger_ddl,
 )
 from pg_star_schema.trigger import (
@@ -36,8 +42,11 @@ from pg_star_schema.upsert import dimension_upsert_sql
 
 __all__ = [
     "build_star_schema",
+    "build_statements",
     "backfill_star_schema",
+    "backfill_statements",
     "drop_star_schema",
+    "drop_statements",
     "dimension_backfill_sql",
     "fact_backfill_sql",
     "drop_trigger_ddl",

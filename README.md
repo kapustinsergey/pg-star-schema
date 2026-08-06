@@ -10,7 +10,7 @@ inserted, updated and deleted - no manual ETL.
 
 Early, built incrementally. `build_star_schema` runs end to end against a live database,
 `backfill_star_schema` mirrors the rows that existed before it ran, and
-`drop_star_schema` removes everything again.
+`drop_star_schema` removes everything again. All three are also available as a CLI.
 
 Requires Postgres 14 or newer.
 
@@ -52,8 +52,30 @@ To undo it all, `drop_star_schema(conn, "orders")` drops the triggers, the sync
 functions, the fact table, and the dimension tables - the source table is never touched.
 If the source table is already gone, pass `columns=` to name the dimension tables to drop.
 
+## CLI
+
+The same three operations, as a command:
+
+```bash
+pg-star-schema build orders customer status country
+pg-star-schema backfill orders customer status country
+pg-star-schema drop orders
+
+pg-star-schema build orders --dsn postgresql://localhost/mydb
+pg-star-schema build orders customer --dry-run
+```
+
+The connection comes from `--dsn`; left empty, psycopg falls back to the libpq `PG*`
+environment variables (`PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, ...). Column
+arguments select what to dimension, exactly like the `columns=` parameter. `--schema`
+picks a schema other than `public`. `--dry-run` prints the SQL a command would run and
+executes nothing - it still connects, because the plan comes from introspecting the
+source table.
+
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
-yourself: `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`, `fact_index_ddl`, `dimension_upsert_sql`,
+yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command
+plans), `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`,
+`fact_index_ddl`, `dimension_upsert_sql`,
 `sync_function_ddl`, `sync_trigger_ddl`, `sync_update_function_ddl`,
 `sync_update_trigger_ddl`, `sync_delete_function_ddl`, `sync_delete_trigger_ddl`, and
 the `drop_*_ddl` counterparts.

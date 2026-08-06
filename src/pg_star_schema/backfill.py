@@ -80,6 +80,18 @@ def fact_backfill_sql(
     )
 
 
+def backfill_statements(
+    table: str,
+    dimensioned: list[Column],
+    key_columns: list[Column],
+    schema: str = "public",
+) -> list[sql.Composed]:
+    """The statements backfill_star_schema executes, in order. Pure - no database."""
+    statements = [dimension_backfill_sql(table, column.name, schema) for column in dimensioned]
+    statements.append(fact_backfill_sql(table, dimensioned, schema, key_columns=key_columns))
+    return statements
+
+
 def backfill_star_schema(
     conn: psycopg.Connection,
     table: str,
@@ -102,6 +114,5 @@ def backfill_star_schema(
     key_columns = [by_name[name] for name in get_primary_key(conn, table, schema)]
 
     with conn.transaction(), conn.cursor() as cur:
-        for column in dimensioned:
-            cur.execute(dimension_backfill_sql(table, column.name, schema))
-        cur.execute(fact_backfill_sql(table, dimensioned, schema, key_columns=key_columns))
+        for statement in backfill_statements(table, dimensioned, key_columns, schema):
+            cur.execute(statement)

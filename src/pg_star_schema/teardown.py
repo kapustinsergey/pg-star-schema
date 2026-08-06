@@ -94,6 +94,30 @@ def drop_dimension_table_ddl(table: str, column: str, schema: str = "public") ->
     )
 
 
+def drop_statements(
+    table: str,
+    columns: list[str],
+    schema: str = "public",
+    source_exists: bool = True,
+) -> list[sql.Composed]:
+    """The statements drop_star_schema executes, in order. Pure - no database.
+
+    Pass `source_exists=False` when the source table is gone - it skips the
+    trigger drops, which Postgres errors on once the table no longer exists.
+    """
+    statements = []
+    if source_exists:
+        statements.append(drop_trigger_ddl(table, schema))
+        statements.append(drop_update_trigger_ddl(table, schema))
+        statements.append(drop_delete_trigger_ddl(table, schema))
+    statements.append(drop_function_ddl(table, schema))
+    statements.append(drop_update_function_ddl(table, schema))
+    statements.append(drop_delete_function_ddl(table, schema))
+    statements.append(drop_fact_table_ddl(table, schema))
+    statements.extend(drop_dimension_table_ddl(table, name, schema) for name in columns)
+    return statements
+
+
 def drop_star_schema(
     conn: psycopg.Connection,
     table: str,
@@ -121,13 +145,5 @@ def drop_star_schema(
         columns = [column.name for column in source_columns]
 
     with conn.transaction(), conn.cursor() as cur:
-        if source_columns:
-            cur.execute(drop_trigger_ddl(table, schema))
-            cur.execute(drop_update_trigger_ddl(table, schema))
-            cur.execute(drop_delete_trigger_ddl(table, schema))
-        cur.execute(drop_function_ddl(table, schema))
-        cur.execute(drop_update_function_ddl(table, schema))
-        cur.execute(drop_delete_function_ddl(table, schema))
-        cur.execute(drop_fact_table_ddl(table, schema))
-        for name in columns:
-            cur.execute(drop_dimension_table_ddl(table, name, schema))
+        for statement in drop_statements(table, columns, schema, source_exists=bool(source_columns)):
+            cur.execute(statement)
