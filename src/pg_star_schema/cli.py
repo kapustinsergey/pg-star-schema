@@ -16,6 +16,7 @@ from psycopg import sql
 from pg_star_schema.backfill import backfill_star_schema, backfill_statements
 from pg_star_schema.build import build_star_schema, build_statements
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
+from pg_star_schema.status import star_schema_status
 from pg_star_schema.teardown import drop_star_schema, drop_statements
 
 
@@ -41,6 +42,11 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
         sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
         sub.add_argument("--dry-run", action="store_true", help="print the SQL without executing anything")
+    status_help = "report which star schema objects exist for the table, with row counts"
+    sub = subparsers.add_parser("status", help=status_help, description=status_help)
+    sub.add_argument("table", help="source table name")
+    sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
+    sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
     return parser
 
 
@@ -88,10 +94,10 @@ def _plan(
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    columns = args.columns or None
+    columns = getattr(args, "columns", None) or None
     try:
         with psycopg.connect(args.dsn) as conn:
-            if args.dry_run:
+            if getattr(args, "dry_run", False):
                 for statement in _plan(conn, args.command, args.table, columns, args.schema):
                     print(statement.as_string(conn) + ";")
                 return 0
@@ -102,6 +108,20 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "backfill":
                 backfill_star_schema(conn, args.table, columns, args.schema)
                 print(f"backfilled {args.schema}.{args.table}")
+            elif args.command == "status":
+                status = star_schema_status(conn, args.table, args.schema)
+                if status.fact is None and not status.dimensions:
+                    print(f"no star schema found for {args.schema}.{args.table}")
+                    return 0
+                print(f"{status.fact.name}: {status.fact.rows} rows" if status.fact else "fact table: missing")
+                for dimension in status.dimensions:
+                    print(f"{dimension.name}: {dimension.rows} rows")
+                for label, installed in (
+                    ("insert", status.insert_trigger),
+                    ("update", status.update_trigger),
+                    ("delete", status.delete_trigger),
+                ):
+                    print(f"{label} trigger: {'installed' if installed else 'missing'}")
             else:
                 drop_star_schema(conn, args.table, columns, args.schema)
                 print(f"dropped star schema for {args.schema}.{args.table}")

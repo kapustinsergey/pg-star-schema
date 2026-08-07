@@ -10,7 +10,8 @@ inserted, updated and deleted - no manual ETL.
 
 Early, built incrementally. `build_star_schema` runs end to end against a live database,
 `backfill_star_schema` mirrors the rows that existed before it ran, and
-`drop_star_schema` removes everything again. All three are also available as a CLI.
+`drop_star_schema` removes everything again, and `star_schema_status` reports what
+exists. All of it is also available as a CLI.
 
 Requires Postgres 14 or newer.
 
@@ -54,12 +55,14 @@ If the source table is already gone, pass `columns=` to name the dimension table
 
 ## CLI
 
-The same three operations, as a command:
+The library operations, as commands:
 
 ```bash
 pg-star-schema build orders customer status country
 pg-star-schema backfill orders customer status country
 pg-star-schema drop orders
+
+pg-star-schema status orders
 
 pg-star-schema build orders --dsn postgresql://localhost/mydb
 pg-star-schema build orders customer --dry-run
@@ -70,7 +73,9 @@ environment variables (`PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, ...). Col
 arguments select what to dimension, exactly like the `columns=` parameter. `--schema`
 picks a schema other than `public`. `--dry-run` prints the SQL a command would run and
 executes nothing - it still connects, because the plan comes from introspecting the
-source table.
+source table. `status` reports which star schema objects exist for the table - fact and
+dimension tables with row counts, and whether each sync trigger is installed (also
+exported as `star_schema_status`).
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command
