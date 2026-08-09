@@ -7,9 +7,20 @@ authors = [
     { name = "Sergey Kapustin", email = "kapustin.sergey@gmail.com" }
 ]
 requires-python = ">=3.11"
+keywords = ["postgres", "postgresql", "star-schema", "olap", "data-warehouse", "etl"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Database",
+]
 dependencies = [
     "psycopg[binary]>=3.3.4",
 ]
+
+[project.urls]
+Repository = "https://github.com/kapustinsergey/pg-star-schema"
+Issues = "https://github.com/kapustinsergey/pg-star-schema/issues"
 
 [project.scripts]
 pg-star-schema = "pg_star_schema.cli:main"
