@@ -9,6 +9,7 @@ executes nothing.
 
 import argparse
 import sys
+from importlib.metadata import PackageNotFoundError, version
 
 import psycopg
 from psycopg import sql
@@ -25,6 +26,11 @@ def _parser() -> argparse.ArgumentParser:
         prog="pg-star-schema",
         description="Build and maintain a star schema on top of an existing Postgres table.",
     )
+    try:
+        package_version = version("pg-star-schema")
+    except PackageNotFoundError:
+        package_version = "unknown"
+    parser.add_argument("--version", action="version", version=f"%(prog)s {package_version}")
     subparsers = parser.add_subparsers(dest="command", required=True)
     commands = {
         "build": "create the dimension tables, fact table, and sync triggers",
