@@ -1,7 +1,9 @@
 from pg_star_schema.backfill import (
     backfill_star_schema,
+    backfill_star_schema_batched,
     backfill_statements,
     dimension_backfill_sql,
+    fact_backfill_batch_sql,
     fact_backfill_sql,
 )
 from pg_star_schema.build import build_star_schema, build_statements
@@ -45,6 +47,7 @@ __all__ = [
     "build_star_schema",
     "build_statements",
     "backfill_star_schema",
+    "backfill_star_schema_batched",
     "backfill_statements",
     "drop_star_schema",
     "star_schema_status",
@@ -53,6 +56,7 @@ __all__ = [
     "drop_statements",
     "dimension_backfill_sql",
     "fact_backfill_sql",
+    "fact_backfill_batch_sql",
     "drop_trigger_ddl",
     "drop_delete_trigger_ddl",
     "drop_update_trigger_ddl",

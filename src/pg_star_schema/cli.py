@@ -14,7 +14,11 @@ from importlib.metadata import PackageNotFoundError, version
 import psycopg
 from psycopg import sql
 
-from pg_star_schema.backfill import backfill_star_schema, backfill_statements
+from pg_star_schema.backfill import (
+    backfill_star_schema,
+    backfill_star_schema_batched,
+    backfill_statements,
+)
 from pg_star_schema.build import build_star_schema, build_statements
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
 from pg_star_schema.status import star_schema_status
@@ -48,6 +52,12 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
         sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
         sub.add_argument("--dry-run", action="store_true", help="print the SQL without executing anything")
+    subparsers.choices["backfill"].add_argument(
+        "--batch-size",
+        type=int,
+        help="mirror the fact rows in key-ordered batches of this size, committing after each"
+        " (requires a single-column primary key)",
+    )
     status_help = "report which star schema objects exist for the table, with row counts"
     sub = subparsers.add_parser("status", help=status_help, description=status_help)
     sub.add_argument("table", help="source table name")
@@ -101,6 +111,12 @@ def _plan(
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     columns = getattr(args, "columns", None) or None
+    if getattr(args, "batch_size", None) is not None and args.dry_run:
+        print(
+            "error: --dry-run cannot be combined with --batch-size - the batch loop is driven by the data",
+            file=sys.stderr,
+        )
+        return 1
     try:
         with psycopg.connect(args.dsn) as conn:
             if getattr(args, "dry_run", False):
@@ -112,8 +128,17 @@ def main(argv: list[str] | None = None) -> int:
                 names = ", ".join(column.name for column in dimensioned)
                 print(f"built star schema for {args.schema}.{args.table}; dimensions: {names}")
             elif args.command == "backfill":
-                backfill_star_schema(conn, args.table, columns, args.schema)
-                print(f"backfilled {args.schema}.{args.table}")
+                if args.batch_size is None:
+                    backfill_star_schema(conn, args.table, columns, args.schema)
+                    print(f"backfilled {args.schema}.{args.table}")
+                else:
+                    processed = backfill_star_schema_batched(
+                        conn, args.table, columns, args.schema, batch_size=args.batch_size
+                    )
+                    print(
+                        f"backfilled {args.schema}.{args.table} "
+                        f"({processed} rows in batches of {args.batch_size})"
+                    )
             elif args.command == "status":
                 status = star_schema_status(conn, args.table, args.schema)
                 if status.fact is None and not status.dimensions:

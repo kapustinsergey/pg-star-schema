@@ -38,6 +38,12 @@ When the source table has a primary key the backfill is idempotent - already-mir
 rows are skipped on a re-run. Without one, call it exactly once, right after
 `build_star_schema` - a second backfill would duplicate rows.
 
+For a large table, `backfill_star_schema_batched(conn, "orders", batch_size=50_000)`
+mirrors the fact rows in key-ordered batches instead, committing after each one - no
+single long transaction, and an interrupted run can simply be re-run and continues where
+it stopped. It requires a single-column primary key and returns the number of source
+rows processed.
+
 That creates `orders_dim_customer`, `orders_dim_status`, `orders_dim_country`, the
 `orders_fact` table holding the surrogate keys (each one indexed), and an after-insert
 trigger on `orders` that resolves each new row into it. When `orders` has a primary
@@ -66,6 +72,7 @@ pg-star-schema status orders
 
 pg-star-schema build orders --dsn postgresql://localhost/mydb
 pg-star-schema build orders customer --dry-run
+pg-star-schema backfill orders --batch-size 50000
 ```
 
 The connection comes from `--dsn`; left empty, psycopg falls back to the libpq `PG*`
@@ -73,7 +80,9 @@ environment variables (`PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, ...). Col
 arguments select what to dimension, exactly like the `columns=` parameter. `--schema`
 picks a schema other than `public`. `--dry-run` prints the SQL a command would run and
 executes nothing - it still connects, because the plan comes from introspecting the
-source table. `status` reports which star schema objects exist for the table - fact and
+source table. `backfill --batch-size N` mirrors the fact rows in key-ordered batches of
+N, committing after each - the batched form of `backfill_star_schema_batched`, for large
+tables. `status` reports which star schema objects exist for the table - fact and
 dimension tables with row counts, and whether each sync trigger is installed (also
 exported as `star_schema_status`).
 
