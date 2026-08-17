@@ -59,6 +59,26 @@ To undo it all, `drop_star_schema(conn, "orders")` drops the triggers, the sync
 functions, the fact table, and the dimension tables - the source table is never touched.
 If the source table is already gone, pass `columns=` to name the dimension tables to drop.
 
+## How it works
+
+For `build_star_schema(conn, "orders", columns=["customer", "status"])` on a table
+with primary key `id`, one transaction creates:
+
+- `orders_dim_customer`, `orders_dim_status` - one row per distinct value:
+  `id bigserial primary key`, `value` typed like the source column, unique.
+- `orders_fact` - one row per source row: `customer_id` and `status_id` referencing
+  the dimensions (each with its own index), plus `source_id` mirroring the primary
+  key.
+- `orders_sync` and `orders_sync_trigger` - after insert, upserts each value into its
+  dimension and writes the fact row.
+- `orders_sync_update` / `orders_sync_delete` and their triggers - after update and
+  after delete, re-point or remove the fact row via `source_id`. Created only when
+  the source table has a primary key; without one, fact rows are insert-only.
+
+Object names all come from `pg_star_schema.naming`, which is how `status` and `drop`
+find every object later from the table name alone. All SQL is composed with
+`psycopg.sql` - identifiers are always quoted, never string-formatted.
+
 ## CLI
 
 The library operations, as commands:
