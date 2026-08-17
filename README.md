@@ -84,7 +84,8 @@ source table. `backfill --batch-size N` mirrors the fact rows in key-ordered bat
 N, committing after each - the batched form of `backfill_star_schema_batched`, for large
 tables. `status` reports which star schema objects exist for the table - fact and
 dimension tables with row counts, and whether each sync trigger is installed (also
-exported as `star_schema_status`).
+exported as `star_schema_status`); `status --estimate` uses the planner's row
+estimates instead of exact counts, instant on large tables.
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command

@@ -63,6 +63,11 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_argument("table", help="source table name")
     sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
     sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
+    sub.add_argument(
+        "--estimate",
+        action="store_true",
+        help="use the planner's row estimates instead of exact counts (instant on large tables)",
+    )
     return parser
 
 
@@ -140,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
                         f"({processed} rows in batches of {args.batch_size})"
                     )
             elif args.command == "status":
-                status = star_schema_status(conn, args.table, args.schema)
+                status = star_schema_status(conn, args.table, args.schema, estimate=args.estimate)
                 if status.fact is None and not status.dimensions:
                     print(f"no star schema found for {args.schema}.{args.table}")
                     return 0
