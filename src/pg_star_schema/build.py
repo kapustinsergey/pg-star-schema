@@ -37,7 +37,7 @@ def build_statements(
     statements = [dimension_table_ddl(table, column, schema) for column in dimensioned]
     statements.append(fact_table_ddl(table, dimensioned, schema, key_columns=key_columns))
     statements.extend(fact_index_ddl(table, column, schema) for column in dimensioned)
-    statements.append(sync_function_ddl(table, dimensioned, schema))
+    statements.append(sync_function_ddl(table, dimensioned, schema, key_columns=key_columns))
     statements.append(sync_trigger_ddl(table, schema))
     if key_columns:
         statements.append(sync_update_function_ddl(table, dimensioned, key_columns, schema))
@@ -85,17 +85,7 @@ def build_star_schema(
     key_columns = [by_name[name] for name in get_primary_key(conn, table, schema)]
 
     with conn.transaction(), conn.cursor() as cur:
-        for column in dimensioned:
-            cur.execute(dimension_table_ddl(table, column, schema))
-        cur.execute(fact_table_ddl(table, dimensioned, schema, key_columns=key_columns))
-        for column in dimensioned:
-            cur.execute(fact_index_ddl(table, column, schema))
-        cur.execute(sync_function_ddl(table, dimensioned, schema, key_columns=key_columns))
-        cur.execute(sync_trigger_ddl(table, schema))
-        if key_columns:
-            cur.execute(sync_update_function_ddl(table, dimensioned, key_columns, schema))
-            cur.execute(sync_update_trigger_ddl(table, schema))
-            cur.execute(sync_delete_function_ddl(table, key_columns, schema))
-            cur.execute(sync_delete_trigger_ddl(table, schema))
+        for statement in build_statements(table, dimensioned, key_columns, schema):
+            cur.execute(statement)
 
     return dimensioned
