@@ -138,7 +138,12 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"backfilled {args.schema}.{args.table}")
                 else:
                     processed = backfill_star_schema_batched(
-                        conn, args.table, columns, args.schema, batch_size=args.batch_size
+                        conn,
+                        args.table,
+                        columns,
+                        args.schema,
+                        batch_size=args.batch_size,
+                        on_batch=lambda rows, total: print(f"  {total} rows", file=sys.stderr),
                     )
                     print(
                         f"backfilled {args.schema}.{args.table} "

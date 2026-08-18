@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import psycopg
 from psycopg import sql
 
@@ -187,6 +189,7 @@ def backfill_star_schema_batched(
     columns: list[str] | None = None,
     schema: str = "public",
     batch_size: int = 10_000,
+    on_batch: Callable[[int, int], None] | None = None,
 ) -> int:
     """Backfill like backfill_star_schema, but mirror the fact rows in
     key-ordered batches, committing after each one.
@@ -195,6 +198,10 @@ def backfill_star_schema_batched(
     each batch is `on conflict do nothing` on the source key, an interrupted
     run can simply be re-run - already-mirrored rows are skipped and the walk
     continues to the end. Returns the number of source rows processed.
+
+    `on_batch`, when given, is called after each committed batch with
+    `(rows_in_batch, total_rows_so_far)` - progress reporting for runs long
+    enough to want it.
 
     NOTE: requires a single-column primary key on the source table. For a
     composite key (or none) use backfill_star_schema.
@@ -225,5 +232,7 @@ def backfill_star_schema_batched(
             cur.execute(statement, params)
             last_key, batch_rows = cur.fetchone()
         processed += batch_rows
+        if batch_rows and on_batch is not None:
+            on_batch(batch_rows, processed)
         if batch_rows < batch_size:
             return processed
