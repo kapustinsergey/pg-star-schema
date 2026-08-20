@@ -3,7 +3,7 @@ from collections.abc import Callable
 import psycopg
 from psycopg import sql
 
-from pg_star_schema.introspect import Column, get_columns, get_primary_key
+from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
 from pg_star_schema.naming import dimension_table_name, fact_table_name, source_key_column_name
 
 
@@ -189,10 +189,7 @@ def backfill_star_schema(
     """
     all_columns = get_columns(conn, table, schema)
     by_name = {column.name: column for column in all_columns}
-    if columns is None:
-        dimensioned = all_columns
-    else:
-        dimensioned = [by_name[name] for name in columns]
+    dimensioned = resolve_columns(all_columns, columns)
     key_columns = [by_name[name] for name in get_primary_key(conn, table, schema)]
 
     with conn.transaction(), conn.cursor() as cur:
@@ -227,7 +224,7 @@ def backfill_star_schema_batched(
         raise ValueError("batch_size must be at least 1")
     all_columns = get_columns(conn, table, schema)
     by_name = {column.name: column for column in all_columns}
-    dimensioned = all_columns if columns is None else [by_name[name] for name in columns]
+    dimensioned = resolve_columns(all_columns, columns)
     key_names = get_primary_key(conn, table, schema)
     if not key_names:
         raise ValueError(

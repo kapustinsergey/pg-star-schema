@@ -2,7 +2,7 @@ import psycopg
 from psycopg import sql
 
 from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
-from pg_star_schema.introspect import Column, get_columns, get_primary_key
+from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
 from pg_star_schema.trigger import (
     sync_delete_function_ddl,
     sync_delete_trigger_ddl,
@@ -11,16 +11,6 @@ from pg_star_schema.trigger import (
     sync_update_function_ddl,
     sync_update_trigger_ddl,
 )
-
-
-def _resolve(all_columns: list[Column], names: list[str] | None) -> list[Column]:
-    if names is None:
-        return all_columns
-    by_name = {column.name: column for column in all_columns}
-    missing = [name for name in names if name not in by_name]
-    if missing:
-        raise ValueError(f"no such column(s) on the source table: {', '.join(missing)}")
-    return [by_name[name] for name in names]
 
 
 def build_statements(
@@ -78,7 +68,7 @@ def build_star_schema(
     if not all_columns:
         raise ValueError(f"table {schema}.{table} does not exist or has no columns")
 
-    dimensioned = _resolve(all_columns, columns)
+    dimensioned = resolve_columns(all_columns, columns)
     if not dimensioned:
         raise ValueError("at least one column must be dimensioned")
     by_name = {column.name: column for column in all_columns}

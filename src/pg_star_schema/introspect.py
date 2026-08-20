@@ -10,6 +10,20 @@ class Column:
     is_nullable: bool
 
 
+def resolve_columns(all_columns: list[Column], names: list[str] | None) -> list[Column]:
+    """The Column values for `names`, in the given order; all of them for None.
+
+    Raises ValueError naming the missing columns instead of a bare KeyError.
+    """
+    if names is None:
+        return all_columns
+    by_name = {column.name: column for column in all_columns}
+    missing = [name for name in names if name not in by_name]
+    if missing:
+        raise ValueError(f"no such column(s) on the source table: {', '.join(missing)}")
+    return [by_name[name] for name in names]
+
+
 def get_columns(conn: psycopg.Connection, table: str, schema: str = "public") -> list[Column]:
     """Return the columns of an existing table, in ordinal position order."""
     with conn.cursor() as cur:
