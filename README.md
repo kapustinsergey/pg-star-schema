@@ -41,9 +41,9 @@ rows are skipped on a re-run. Without one, call it exactly once, right after
 For a large table, `backfill_star_schema_batched(conn, "orders", batch_size=50_000)`
 mirrors the fact rows in key-ordered batches instead, committing after each one - no
 single long transaction, and an interrupted run can simply be re-run and continues where
-it stopped. It requires a single-column primary key and returns the number of source
-rows processed; an optional `on_batch` callback receives `(rows_in_batch, total_so_far)`
-after each committed batch.
+it stopped. It requires a primary key - composite keys are walked in row-value order -
+and returns the number of source rows processed; an optional `on_batch` callback
+receives `(rows_in_batch, total_so_far)` after each committed batch.
 
 That creates `orders_dim_customer`, `orders_dim_status`, `orders_dim_country`, the
 `orders_fact` table holding the surrogate keys (each one indexed), and an after-insert

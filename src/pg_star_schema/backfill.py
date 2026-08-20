@@ -85,17 +85,19 @@ def fact_backfill_sql(
 def fact_backfill_batch_sql(
     table: str,
     columns: list[Column],
-    key_column: Column,
+    key_columns: list[Column],
     schema: str = "public",
     after: bool = False,
 ) -> sql.Composed:
     """SQL mirroring one key-ordered batch of source rows into the fact table.
 
-    Parametrized: execute with `(batch_size,)` when `after` is false (the first
-    batch), or `(last_key, batch_size)` when it is true (only rows whose key is
-    greater than `last_key`). Returns a single row `(max key in the batch,
-    batch row count)` so the caller can advance the cursor and detect the final
-    batch. Rows already mirrored - by the sync trigger or an earlier run - are
+    Walks the primary key in row-value order, so composite keys work the same
+    as single-column ones. Parametrized: execute with `(batch_size,)` when
+    `after` is false (the first batch), or `(*last_key, batch_size)` when it
+    is true (only rows whose key row-value is greater than the previous
+    batch's last key). Returns one row per non-empty batch - the last row's
+    key values followed by the batch row count - and no row when the batch is
+    empty. Rows already mirrored - by the sync trigger or an earlier run - are
     skipped via `on conflict do nothing` on the source key.
     """
     joins = [
@@ -107,6 +109,8 @@ def fact_backfill_batch_sql(
         )
         for column in columns
     ]
+    key_aliases = [sql.Identifier(f"sk_{i}") for i in range(len(key_columns))]
+    key_refs = [sql.SQL("s.{key}").format(key=sql.Identifier(key.name)) for key in key_columns]
     batch_exprs = [
         sql.SQL("{alias}.id as {out}").format(
             alias=sql.Identifier(f"d_{column.name}"),
@@ -114,34 +118,47 @@ def fact_backfill_batch_sql(
         )
         for column in columns
     ]
-    batch_exprs.append(sql.SQL("s.{key} as source_key").format(key=sql.Identifier(key_column.name)))
+    batch_exprs.extend(
+        sql.SQL("{ref} as {alias}").format(ref=ref, alias=alias)
+        for ref, alias in zip(key_refs, key_aliases)
+    )
     insert_columns = [sql.Identifier(f"{column.name}_id") for column in columns]
-    insert_columns.append(sql.Identifier(source_key_column_name(key_column.name)))
+    insert_columns.extend(sql.Identifier(source_key_column_name(key.name)) for key in key_columns)
     batch_columns: list[sql.Composable] = [sql.Identifier(f"{column.name}_id") for column in columns]
-    batch_columns.append(sql.Identifier("source_key"))
+    batch_columns.extend(key_aliases)
     where = sql.SQL("")
     if after:
-        where = sql.SQL("where s.{key} > %s ").format(key=sql.Identifier(key_column.name))
+        where = sql.SQL("where ({key_refs}) > ({placeholders}) ").format(
+            key_refs=sql.SQL(", ").join(key_refs),
+            placeholders=sql.SQL(", ").join(sql.SQL("%s") for _ in key_columns),
+        )
     return sql.SQL(
         "with batch as ("
         "select {batch_exprs} from {schema}.{table} s {joins} "
-        "{where}order by s.{key} limit %s"
+        "{where}order by {key_refs} limit %s"
         "), mirrored as ("
         "insert into {schema}.{fact} ({insert_columns}) "
         "select {batch_columns} from batch "
-        "on conflict ({source_key}) do nothing"
-        ") select max(source_key), count(*) from batch"
+        "on conflict ({source_keys}) do nothing"
+        ") select {key_aliases}, (select count(*) from batch) from batch "
+        "order by {desc_aliases} limit 1"
     ).format(
         batch_exprs=sql.SQL(", ").join(batch_exprs),
         schema=sql.Identifier(schema),
         table=sql.Identifier(table),
         joins=sql.SQL(" ").join(joins),
         where=where,
-        key=sql.Identifier(key_column.name),
+        key_refs=sql.SQL(", ").join(key_refs),
         fact=sql.Identifier(fact_table_name(table)),
         insert_columns=sql.SQL(", ").join(insert_columns),
         batch_columns=sql.SQL(", ").join(batch_columns),
-        source_key=sql.Identifier(source_key_column_name(key_column.name)),
+        source_keys=sql.SQL(", ").join(
+            sql.Identifier(source_key_column_name(key.name)) for key in key_columns
+        ),
+        key_aliases=sql.SQL(", ").join(key_aliases),
+        desc_aliases=sql.SQL(", ").join(
+            sql.SQL("{alias} desc").format(alias=alias) for alias in key_aliases
+        ),
     )
 
 
@@ -203,8 +220,8 @@ def backfill_star_schema_batched(
     `(rows_in_batch, total_rows_so_far)` - progress reporting for runs long
     enough to want it.
 
-    NOTE: requires a single-column primary key on the source table. For a
-    composite key (or none) use backfill_star_schema.
+    NOTE: requires a primary key on the source table (composite keys are
+    walked in row-value order). Without one use backfill_star_schema.
     """
     if batch_size < 1:
         raise ValueError("batch_size must be at least 1")
@@ -212,27 +229,31 @@ def backfill_star_schema_batched(
     by_name = {column.name: column for column in all_columns}
     dimensioned = all_columns if columns is None else [by_name[name] for name in columns]
     key_names = get_primary_key(conn, table, schema)
-    if len(key_names) != 1:
+    if not key_names:
         raise ValueError(
-            f"batched backfill requires a single-column primary key on {schema}.{table}; "
+            f"batched backfill requires a primary key on {schema}.{table}; "
             "use backfill_star_schema instead"
         )
-    key_column = by_name[key_names[0]]
+    key_columns = [by_name[name] for name in key_names]
 
     with conn.transaction(), conn.cursor() as cur:
         for column in dimensioned:
             cur.execute(dimension_backfill_sql(table, column.name, schema))
 
     processed = 0
-    last_key = None
+    last_key: tuple | None = None
     while True:
-        statement = fact_backfill_batch_sql(table, dimensioned, key_column, schema, after=last_key is not None)
-        params = (batch_size,) if last_key is None else (last_key, batch_size)
+        statement = fact_backfill_batch_sql(table, dimensioned, key_columns, schema, after=last_key is not None)
+        params = (batch_size,) if last_key is None else (*last_key, batch_size)
         with conn.transaction(), conn.cursor() as cur:
             cur.execute(statement, params)
-            last_key, batch_rows = cur.fetchone()
+            row = cur.fetchone()
+        if row is None:
+            return processed
+        *last_key_values, batch_rows = row
+        last_key = tuple(last_key_values)
         processed += batch_rows
-        if batch_rows and on_batch is not None:
+        if on_batch is not None:
             on_batch(batch_rows, processed)
         if batch_rows < batch_size:
             return processed
