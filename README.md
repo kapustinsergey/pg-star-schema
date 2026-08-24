@@ -71,7 +71,8 @@ with primary key `id`, one transaction creates:
   the dimensions (each with its own index), plus `source_id` mirroring the primary
   key.
 - `orders_sync` and `orders_sync_trigger` - after insert, upserts each value into its
-  dimension and writes the fact row.
+  dimension and writes the fact row. A NULL value skips its dimension and becomes a
+  NULL surrogate key, same as the backfill.
 - `orders_sync_update` / `orders_sync_delete` and their triggers - after update and
   after delete, re-point or remove the fact row via `source_id`. Created only when
   the source table has a primary key; without one, fact rows are insert-only.

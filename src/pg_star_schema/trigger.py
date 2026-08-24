@@ -18,6 +18,28 @@ def _variable_name(column: Column) -> str:
     return f"v_{column.name}_id"
 
 
+def _guarded_upsert(table: str, column: Column, schema: str) -> sql.Composed:
+    """The dimension upsert for one column, skipped when the value is NULL.
+
+    A NULL has no dimension row - the variable stays NULL and the fact row
+    carries a NULL surrogate key, same as the backfill. Columns the source
+    table declares NOT NULL get the bare upsert - the guard would be dead code.
+    """
+    upsert = dimension_upsert_sql(
+        table,
+        column.name,
+        schema,
+        value_expr=sql.SQL("new.{column}").format(column=sql.Identifier(column.name)),
+        into=_variable_name(column),
+    )
+    if not column.is_nullable:
+        return upsert
+    return sql.SQL("if new.{column} is not null then {upsert}; end if").format(
+        column=sql.Identifier(column.name),
+        upsert=upsert,
+    )
+
+
 def sync_function_ddl(
     table: str,
     columns: list[Column],
@@ -33,21 +55,15 @@ def sync_function_ddl(
     `key_columns` is the source table's primary key; when given, the fact row also
     stores it in the `source_<column>` columns. Pass the same value the fact table
     was created with.
+
+    A NULL in a dimensioned column skips its upsert: the fact row carries a NULL
+    surrogate key, same as the backfill.
     """
     declarations = [
         sql.SQL("{var} bigint;").format(var=sql.Identifier(_variable_name(column)))
         for column in columns
     ]
-    upserts = [
-        dimension_upsert_sql(
-            table,
-            column.name,
-            schema,
-            value_expr=sql.SQL("new.{column}").format(column=sql.Identifier(column.name)),
-            into=_variable_name(column),
-        )
-        for column in columns
-    ]
+    upserts = [_guarded_upsert(table, column, schema) for column in columns]
     insert_columns = [sql.Identifier(f"{column.name}_id") for column in columns]
     insert_values: list[sql.Composable] = [sql.Identifier(_variable_name(column)) for column in columns]
     for key in key_columns or []:
@@ -86,7 +102,8 @@ def sync_update_function_ddl(
 
     A source row without a fact row (inserted before the star schema existed and
     never backfilled) matches nothing and stays unmirrored. Dimension rows the
-    old value pointed to stay in place.
+    old value pointed to stay in place. A NULL in a dimensioned column skips its
+    upsert - the fact row's surrogate key becomes NULL, same as the backfill.
     """
     if not key_columns:
         raise ValueError("key_columns must name the source table's primary key")
@@ -94,16 +111,7 @@ def sync_update_function_ddl(
         sql.SQL("{var} bigint;").format(var=sql.Identifier(_variable_name(column)))
         for column in columns
     ]
-    upserts = [
-        dimension_upsert_sql(
-            table,
-            column.name,
-            schema,
-            value_expr=sql.SQL("new.{column}").format(column=sql.Identifier(column.name)),
-            into=_variable_name(column),
-        )
-        for column in columns
-    ]
+    upserts = [_guarded_upsert(table, column, schema) for column in columns]
     assignments = [
         sql.SQL("{fk_name} = {var}").format(
             fk_name=sql.Identifier(f"{column.name}_id"),
