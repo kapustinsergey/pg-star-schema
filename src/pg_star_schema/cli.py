@@ -20,7 +20,7 @@ from pg_star_schema.backfill import (
     backfill_statements,
 )
 from pg_star_schema.build import build_star_schema, build_statements
-from pg_star_schema.introspect import Column, get_columns, get_primary_key
+from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
 from pg_star_schema.status import star_schema_status
 from pg_star_schema.teardown import drop_star_schema, drop_statements
 
@@ -56,7 +56,7 @@ def _parser() -> argparse.ArgumentParser:
         "--batch-size",
         type=int,
         help="mirror the fact rows in key-ordered batches of this size, committing after each"
-        " (requires a single-column primary key)",
+        " (requires a primary key)",
     )
     status_help = "report which star schema objects exist for the table, with row counts"
     sub = subparsers.add_parser("status", help=status_help, description=status_help)
@@ -81,12 +81,8 @@ def _introspect(
     all_columns = get_columns(conn, table, schema)
     if not all_columns:
         raise ValueError(f"table {schema}.{table} does not exist or has no columns")
+    dimensioned = resolve_columns(all_columns, columns)
     by_name = {column.name: column for column in all_columns}
-    if columns:
-        missing = [name for name in columns if name not in by_name]
-        if missing:
-            raise ValueError(f"no such column(s) on the source table: {', '.join(missing)}")
-    dimensioned = [by_name[name] for name in columns] if columns else all_columns
     key_columns = [by_name[name] for name in get_primary_key(conn, table, schema)]
     return dimensioned, key_columns
 
