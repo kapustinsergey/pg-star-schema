@@ -9,9 +9,10 @@ inserted, updated and deleted - no manual ETL.
 ## Status
 
 Early, built incrementally. `build_star_schema` runs end to end against a live database,
-`backfill_star_schema` mirrors the rows that existed before it ran, and
-`drop_star_schema` removes everything again, and `star_schema_status` reports what
-exists. All of it is also available as a CLI.
+`backfill_star_schema` mirrors the rows that existed before it ran,
+`drop_star_schema` removes everything again, `star_schema_status` reports what
+exists, and `check_star_schema` counts the rows the fact table and the source table
+disagree on. All of it is also available as a CLI.
 
 Requires Postgres 14 or newer.
 
@@ -56,6 +57,12 @@ is deleted.
 Pick the columns you actually group by. Omitting `columns` dimensions every column, which
 gives a surrogate key or a timestamp one dimension row per fact row - pure overhead.
 
+`check_star_schema(conn, "orders")` compares the two sides by primary key and returns
+how many source rows have no fact row (`unmirrored`) and how many fact rows have no
+source row left (`orphaned`) - both zero means the star schema is in sync. Read-only
+and exact, so it is two full scans; run it when drift is suspected, such as after a
+trigger was dropped or a backfill was interrupted. Requires a primary key.
+
 To undo it all, `drop_star_schema(conn, "orders")` drops the triggers, the sync
 functions, the fact table, and the dimension tables - the source table is never touched.
 If the source table is already gone, pass `columns=` to name the dimension tables to drop.
@@ -91,6 +98,7 @@ pg-star-schema backfill orders customer status country
 pg-star-schema drop orders
 
 pg-star-schema status orders
+pg-star-schema check orders
 
 pg-star-schema build orders --dsn postgresql://localhost/mydb
 pg-star-schema build orders customer --dry-run
@@ -107,11 +115,14 @@ N, committing after each - the batched form of `backfill_star_schema_batched`, f
 tables. `status` reports which star schema objects exist for the table - fact and
 dimension tables with row counts, and whether each sync trigger is installed (also
 exported as `star_schema_status`); `status --estimate` uses the planner's row
-estimates instead of exact counts, instant on large tables.
+estimates instead of exact counts, instant on large tables. `check` prints the
+unmirrored and orphaned row counts and exits 0 when both are zero, 2 when they are
+not (1 stays the error exit), so a cron job can alert on drift.
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command
-plans), `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`,
+plans), `unmirrored_rows_sql`, `orphaned_rows_sql` (the two `check` queries),
+`get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`,
 `fact_index_ddl`, `dimension_upsert_sql`,
 `sync_function_ddl`, `sync_trigger_ddl`, `sync_update_function_ddl`,
 `sync_update_trigger_ddl`, `sync_delete_function_ddl`, `sync_delete_trigger_ddl`, and

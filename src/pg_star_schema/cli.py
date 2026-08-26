@@ -1,4 +1,4 @@
-"""Command line interface: build, backfill, or drop a star schema.
+"""Command line interface: build, backfill, check, or drop a star schema.
 
 The connection string comes from `--dsn`; when it is empty (the default),
 psycopg falls back to the libpq `PG*` environment variables (`PGHOST`,
@@ -20,6 +20,7 @@ from pg_star_schema.backfill import (
     backfill_statements,
 )
 from pg_star_schema.build import build_star_schema, build_statements
+from pg_star_schema.check import check_star_schema
 from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
 from pg_star_schema.status import star_schema_status
 from pg_star_schema.teardown import drop_star_schema, drop_statements
@@ -68,6 +69,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use the planner's row estimates instead of exact counts (instant on large tables)",
     )
+    check_help = "count source rows without a fact row and fact rows without a source row; exit 2 on drift"
+    sub = subparsers.add_parser("check", help=check_help, description=check_help)
+    sub.add_argument("table", help="source table name")
+    sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
+    sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
     return parser
 
 
@@ -159,6 +165,12 @@ def main(argv: list[str] | None = None) -> int:
                     ("delete", status.delete_trigger),
                 ):
                     print(f"{label} trigger: {'installed' if installed else 'missing'}")
+            elif args.command == "check":
+                check = check_star_schema(conn, args.table, args.schema)
+                print(f"unmirrored source rows: {check.unmirrored}")
+                print(f"orphaned fact rows: {check.orphaned}")
+                if not check.in_sync:
+                    return 2
             else:
                 drop_star_schema(conn, args.table, columns, args.schema)
                 print(f"dropped star schema for {args.schema}.{args.table}")

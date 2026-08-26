@@ -7,6 +7,7 @@ from pg_star_schema.backfill import (
     fact_backfill_sql,
 )
 from pg_star_schema.build import build_star_schema, build_statements
+from pg_star_schema.check import SyncCheck, check_star_schema, orphaned_rows_sql, unmirrored_rows_sql
 from pg_star_schema.status import StarSchemaStatus, TableStatus, star_schema_status
 from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
@@ -53,6 +54,10 @@ __all__ = [
     "star_schema_status",
     "StarSchemaStatus",
     "TableStatus",
+    "check_star_schema",
+    "SyncCheck",
+    "unmirrored_rows_sql",
+    "orphaned_rows_sql",
     "drop_statements",
     "dimension_backfill_sql",
     "fact_backfill_sql",
