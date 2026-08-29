@@ -5,6 +5,11 @@ import psycopg
 
 @dataclass(frozen=True)
 class Column:
+    """One source column. `data_type` is the type as DDL spells it - `format_type`
+    output such as `character varying(50)`, `numeric(12,2)`, `integer[]` or an
+    enum's (schema-qualified where needed) name - so it can be reused verbatim
+    for the dimension table's `value` column."""
+
     name: str
     data_type: str
     is_nullable: bool
@@ -25,14 +30,22 @@ def resolve_columns(all_columns: list[Column], names: list[str] | None) -> list[
 
 
 def get_columns(conn: psycopg.Connection, table: str, schema: str = "public") -> list[Column]:
-    """Return the columns of an existing table, in ordinal position order."""
+    """Return the columns of an existing table, in ordinal position order.
+
+    Reads pg_attribute rather than information_schema.columns: the latter's
+    data_type collapses enums to `USER-DEFINED`, arrays to `ARRAY` and drops
+    lengths and precisions, none of which survives being pasted into DDL.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
-            select column_name, data_type, is_nullable = 'YES'
-            from information_schema.columns
-            where table_schema = %s and table_name = %s
-            order by ordinal_position
+            select a.attname, format_type(a.atttypid, a.atttypmod), not a.attnotnull
+            from pg_attribute a
+            join pg_class c on c.oid = a.attrelid
+            join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = %s and c.relname = %s
+              and a.attnum > 0 and not a.attisdropped
+            order by a.attnum
             """,
             (schema, table),
         )
