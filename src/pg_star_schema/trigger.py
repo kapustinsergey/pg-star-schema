@@ -2,6 +2,7 @@ from psycopg import sql
 
 from pg_star_schema.introspect import Column
 from pg_star_schema.naming import (
+    dimension_table_name,
     fact_table_name,
     source_key_column_name,
     sync_delete_function_name,
@@ -18,13 +19,22 @@ def _variable_name(column: Column) -> str:
     return f"v_{column.name}_id"
 
 
-def _guarded_upsert(table: str, column: Column, schema: str) -> sql.Composed:
-    """The dimension upsert for one column, skipped when the value is NULL.
+def _resolve_dimension_id(table: str, column: Column, schema: str) -> sql.Composed:
+    """Assign the value's surrogate key to its variable: look up, insert only if new.
 
-    A NULL has no dimension row - the variable stays NULL and the fact row
-    carries a NULL surrogate key, same as the backfill. Columns the source
-    table declares NOT NULL get the bare upsert - the guard would be dead code.
+    Repeat values - the common case, once a dimension has filled up - resolve
+    with a read alone. Falling straight to the upsert would work too, but its
+    `on conflict do update` writes a dead row version on every source insert
+    just to make `returning id` see the existing row. The upsert stays as the
+    not-found branch, where its conflict arm still covers a concurrent insert
+    of the same value.
     """
+    lookup = sql.SQL("select id into {var} from {schema}.{dim} where value = new.{column}").format(
+        var=sql.Identifier(_variable_name(column)),
+        schema=sql.Identifier(schema),
+        dim=sql.Identifier(dimension_table_name(table, column.name)),
+        column=sql.Identifier(column.name),
+    )
     upsert = dimension_upsert_sql(
         table,
         column.name,
@@ -32,11 +42,26 @@ def _guarded_upsert(table: str, column: Column, schema: str) -> sql.Composed:
         value_expr=sql.SQL("new.{column}").format(column=sql.Identifier(column.name)),
         into=_variable_name(column),
     )
-    if not column.is_nullable:
-        return upsert
-    return sql.SQL("if new.{column} is not null then {upsert}; end if").format(
-        column=sql.Identifier(column.name),
+    return sql.SQL("{lookup}; if {var} is null then {upsert}; end if").format(
+        lookup=lookup,
+        var=sql.Identifier(_variable_name(column)),
         upsert=upsert,
+    )
+
+
+def _guarded_upsert(table: str, column: Column, schema: str) -> sql.Composed:
+    """The dimension resolution for one column, skipped when the value is NULL.
+
+    A NULL has no dimension row - the variable stays NULL and the fact row
+    carries a NULL surrogate key, same as the backfill. Columns the source
+    table declares NOT NULL skip the guard - it would be dead code.
+    """
+    resolve = _resolve_dimension_id(table, column, schema)
+    if not column.is_nullable:
+        return resolve
+    return sql.SQL("if new.{column} is not null then {resolve}; end if").format(
+        column=sql.Identifier(column.name),
+        resolve=resolve,
     )
 
 
