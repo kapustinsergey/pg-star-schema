@@ -126,8 +126,8 @@ def drop_star_schema(
 ) -> None:
     """Drop everything build_star_schema created for `table`.
 
-    Removes the trigger, the sync function, the fact table, and the dimension
-    tables, in dependency order, inside one transaction. Every statement is
+    Removes the sync triggers, the sync functions, the fact table, and the
+    dimension tables, in dependency order, inside one transaction. Every statement is
     `if exists`, so a partially built or already torn-down star schema is fine.
     The source table itself is never touched.
 
