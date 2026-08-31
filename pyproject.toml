@@ -3,6 +3,7 @@ name = "pg-star-schema"
 version = "0.1.0"
 description = "Automatically create and manage a star schema on top of existing Postgres tables"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Sergey Kapustin", email = "kapustin.sergey@gmail.com" }
 ]

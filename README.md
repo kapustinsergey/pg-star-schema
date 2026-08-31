@@ -6,6 +6,11 @@ Point it at a table you already have; it introspects the columns and generates t
 fact/dimension tables and the triggers needed to keep a star schema in sync as rows are
 inserted, updated and deleted - no manual ETL.
 
+It turns an operational Postgres table into a dimensional model for analytics and OLAP
+queries in place: the fact table, one dimension table per chosen column, surrogate keys,
+indexes, and the sync triggers, all inside the same database - a small data warehouse
+without moving the data anywhere. Python 3.11+, psycopg 3, plain SQL underneath.
+
 ## Status
 
 Early, built incrementally. `build_star_schema` runs end to end against a live database,
@@ -128,3 +133,7 @@ plans), `unmirrored_rows_sql`, `orphaned_rows_sql` (the two `check` queries),
 `sync_function_ddl`, `sync_trigger_ddl`, `sync_update_function_ddl`,
 `sync_update_trigger_ddl`, `sync_delete_function_ddl`, `sync_delete_trigger_ddl`, and
 the `drop_*_ddl` counterparts.
+
+## License
+
+MIT.
