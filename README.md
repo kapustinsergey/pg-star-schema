@@ -67,6 +67,9 @@ how many source rows have no fact row (`unmirrored`) and how many fact rows have
 source row left (`orphaned`) - both zero means the star schema is in sync. Read-only
 and exact, so it is two full scans; run it when drift is suspected, such as after a
 trigger was dropped or a backfill was interrupted. Requires a primary key.
+`repair_star_schema(conn, "orders", columns=[...])` fixes what check reports, in one
+transaction: it mirrors the unmirrored rows (the backfill, which skips rows already
+present) and deletes the orphaned fact rows, and returns the drift it fixed.
 
 To undo it all, `drop_star_schema(conn, "orders")` drops the triggers, the sync
 functions, the fact table, and the dimension tables - the source table is never touched.
@@ -105,6 +108,7 @@ pg-star-schema drop orders
 
 pg-star-schema status orders
 pg-star-schema check orders
+pg-star-schema repair orders customer status country
 
 pg-star-schema build orders --dsn postgresql://localhost/mydb
 pg-star-schema build orders customer --dry-run
@@ -123,7 +127,8 @@ dimension tables with row counts, and whether each sync trigger is installed (al
 exported as `star_schema_status`); `status --estimate` uses the planner's row
 estimates instead of exact counts, instant on large tables. `check` prints the
 unmirrored and orphaned row counts and exits 0 when both are zero, 2 when they are
-not (1 stays the error exit), so a cron job can alert on drift.
+not (1 stays the error exit), so a cron job can alert on drift. `repair` fixes what
+`check` reports - pass the same columns the star schema was built with.
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command

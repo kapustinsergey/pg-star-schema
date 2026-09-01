@@ -1,4 +1,4 @@
-"""Command line interface: build, backfill, check, or drop a star schema.
+"""Command line interface: build, backfill, check, repair, or drop a star schema.
 
 The connection string comes from `--dsn`; when it is empty (the default),
 psycopg falls back to the libpq `PG*` environment variables (`PGHOST`,
@@ -20,7 +20,7 @@ from pg_star_schema.backfill import (
     backfill_statements,
 )
 from pg_star_schema.build import build_star_schema, build_statements
-from pg_star_schema.check import check_star_schema
+from pg_star_schema.check import check_star_schema, repair_star_schema
 from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
 from pg_star_schema.status import star_schema_status
 from pg_star_schema.teardown import drop_star_schema, drop_statements
@@ -72,6 +72,16 @@ def _parser() -> argparse.ArgumentParser:
     check_help = "count source rows without a fact row and fact rows without a source row; exit 2 on drift"
     sub = subparsers.add_parser("check", help=check_help, description=check_help)
     sub.add_argument("table", help="source table name")
+    sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
+    sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
+    repair_help = "fix what check reports: mirror the unmirrored source rows, delete the orphaned fact rows"
+    sub = subparsers.add_parser("repair", help=repair_help, description=repair_help)
+    sub.add_argument("table", help="source table name")
+    sub.add_argument(
+        "columns",
+        nargs="*",
+        help="the dimensioned columns the star schema was built with; default: every column",
+    )
     sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
     sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
     return parser
@@ -171,6 +181,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"orphaned fact rows: {check.orphaned}")
                 if not check.in_sync:
                     return 2
+            elif args.command == "repair":
+                fixed = repair_star_schema(conn, args.table, columns, args.schema)
+                if fixed.in_sync:
+                    print(f"{args.schema}.{args.table} already in sync")
+                else:
+                    print(f"mirrored {fixed.unmirrored} source rows, removed {fixed.orphaned} orphaned fact rows")
             else:
                 drop_star_schema(conn, args.table, columns, args.schema)
                 print(f"dropped star schema for {args.schema}.{args.table}")

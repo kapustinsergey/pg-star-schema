@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import psycopg
 from psycopg import sql
 
+from pg_star_schema.backfill import backfill_star_schema
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
 from pg_star_schema.naming import fact_table_name, source_key_column_name
 
@@ -95,3 +96,53 @@ def check_star_schema(conn: psycopg.Connection, table: str, schema: str = "publi
         cur.execute(orphaned_rows_sql(table, key_columns, schema))
         orphaned = cur.fetchone()[0]
     return SyncCheck(unmirrored=unmirrored, orphaned=orphaned)
+
+
+def orphaned_rows_delete_sql(table: str, key_columns: list[Column], schema: str = "public") -> sql.Composed:
+    """SQL removing the fact rows whose source row no longer exists.
+
+    The delete counterpart of orphaned_rows_sql - what the delete trigger
+    would have done had it been installed when the source rows went away.
+    Dimension rows stay in place, as everywhere else.
+    """
+    return sql.SQL(
+        "delete from {schema}.{fact} f "
+        "where not exists (select 1 from {schema}.{table} s where {key_match})"
+    ).format(
+        schema=sql.Identifier(schema),
+        table=sql.Identifier(table),
+        fact=sql.Identifier(fact_table_name(table)),
+        key_match=_key_match(key_columns),
+    )
+
+
+def repair_star_schema(
+    conn: psycopg.Connection,
+    table: str,
+    columns: list[str] | None = None,
+    schema: str = "public",
+) -> SyncCheck:
+    """Bring a drifted star schema back in line with its source table.
+
+    Measures the drift the way check_star_schema does, then mirrors the
+    unmirrored source rows (the backfill, which skips rows already present)
+    and deletes the orphaned fact rows - all in one transaction, so the fact
+    table moves from one consistent state to another. Returns the drift as it
+    was measured, i.e. what the repair fixed; `in_sync` on the result means
+    there was nothing to do.
+
+    Pass the same `columns` selection the star schema was built with - the
+    backfill fills dimensions for it. Requires a primary key on the source
+    table, same as check_star_schema.
+    """
+    with conn.transaction():
+        drift = check_star_schema(conn, table, schema)
+        if drift.unmirrored:
+            backfill_star_schema(conn, table, columns, schema)
+        if drift.orphaned:
+            key_names = get_primary_key(conn, table, schema)
+            by_name = {column.name: column for column in get_columns(conn, table, schema)}
+            key_columns = [by_name[name] for name in key_names]
+            with conn.cursor() as cur:
+                cur.execute(orphaned_rows_delete_sql(table, key_columns, schema))
+    return drift
