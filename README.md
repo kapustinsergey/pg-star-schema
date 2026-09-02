@@ -16,8 +16,9 @@ without moving the data anywhere. Python 3.11+, psycopg 3, plain SQL underneath.
 Early, built incrementally. `build_star_schema` runs end to end against a live database,
 `backfill_star_schema` mirrors the rows that existed before it ran,
 `drop_star_schema` removes everything again, `star_schema_status` reports what
-exists, and `check_star_schema` counts the rows the fact table and the source table
-disagree on. All of it is also available as a CLI.
+exists, `check_star_schema` counts the rows the fact table and the source table
+disagree on, and `repair_star_schema` brings them back in line. All of it is also
+available as a CLI.
 
 Requires Postgres 14 or newer.
 
@@ -136,6 +137,7 @@ check finds drift there).
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command
 plans), `unmirrored_rows_sql`, `orphaned_rows_sql` (the two `check` queries),
+`orphaned_rows_delete_sql` (the `repair` delete),
 `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`,
 `fact_index_ddl`, `dimension_upsert_sql`,
 `sync_function_ddl`, `sync_trigger_ddl`, `sync_update_function_ddl`,
