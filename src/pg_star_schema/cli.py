@@ -20,7 +20,13 @@ from pg_star_schema.backfill import (
     backfill_statements,
 )
 from pg_star_schema.build import build_star_schema, build_statements
-from pg_star_schema.check import check_star_schema, repair_star_schema
+from pg_star_schema.check import (
+    check_star_schema,
+    orphaned_rows_delete_sql,
+    orphaned_rows_sql,
+    repair_star_schema,
+    unmirrored_rows_sql,
+)
 from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
 from pg_star_schema.status import star_schema_status
 from pg_star_schema.teardown import drop_star_schema, drop_statements
@@ -74,6 +80,7 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_argument("table", help="source table name")
     sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
     sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
+    sub.add_argument("--dry-run", action="store_true", help="print the two count queries without executing anything")
     repair_help = "fix what check reports: mirror the unmirrored source rows, delete the orphaned fact rows"
     sub = subparsers.add_parser("repair", help=repair_help, description=repair_help)
     sub.add_argument("table", help="source table name")
@@ -84,6 +91,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
     sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
+    sub.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the backfill and orphan-delete SQL without executing anything"
+        " (a real run executes each side only when check finds drift there)",
+    )
     return parser
 
 
@@ -122,6 +135,20 @@ def _plan(
     dimensioned, key_columns = _introspect(conn, table, columns, schema)
     if command == "build":
         return build_statements(table, dimensioned, key_columns, schema)
+    if command in ("check", "repair") and not key_columns:
+        raise ValueError(
+            f"{command} requires a primary key on {schema}.{table}; "
+            "without one fact rows are not linked to source rows"
+        )
+    if command == "check":
+        return [
+            unmirrored_rows_sql(table, key_columns, schema),
+            orphaned_rows_sql(table, key_columns, schema),
+        ]
+    if command == "repair":
+        return backfill_statements(table, dimensioned, key_columns, schema) + [
+            orphaned_rows_delete_sql(table, key_columns, schema)
+        ]
     return backfill_statements(table, dimensioned, key_columns, schema)
 
 

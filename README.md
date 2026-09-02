@@ -128,7 +128,10 @@ exported as `star_schema_status`); `status --estimate` uses the planner's row
 estimates instead of exact counts, instant on large tables. `check` prints the
 unmirrored and orphaned row counts and exits 0 when both are zero, 2 when they are
 not (1 stays the error exit), so a cron job can alert on drift. `repair` fixes what
-`check` reports - pass the same columns the star schema was built with.
+`check` reports - pass the same columns the star schema was built with. Both take
+`--dry-run` too: `check --dry-run` prints the two count queries, `repair --dry-run`
+prints the backfill and the orphan delete (a real run executes each side only when
+check finds drift there).
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command
