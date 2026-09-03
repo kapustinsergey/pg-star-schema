@@ -1,7 +1,12 @@
 from psycopg import sql
 
 from pg_star_schema.introspect import Column
-from pg_star_schema.naming import dimension_table_name, fact_table_name, source_key_column_name
+from pg_star_schema.naming import (
+    dimension_table_name,
+    fact_index_name,
+    fact_table_name,
+    source_key_column_name,
+)
 
 
 def dimension_table_ddl(table: str, column: Column, schema: str = "public") -> sql.Composed:
@@ -75,10 +80,9 @@ def fact_index_ddl(table: str, column: Column, schema: str = "public") -> sql.Co
     Star queries join the fact table to a dimension and filter or group on it;
     the index lets those joins seek instead of scanning the fact table.
     """
-    fact = fact_table_name(table)
     return sql.SQL("create index if not exists {index} on {schema}.{fact} ({fk_name})").format(
-        index=sql.Identifier(f"{fact}_{column.name}_id_idx"),
+        index=sql.Identifier(fact_index_name(table, column.name)),
         schema=sql.Identifier(schema),
-        fact=sql.Identifier(fact),
+        fact=sql.Identifier(fact_table_name(table)),
         fk_name=sql.Identifier(f"{column.name}_id"),
     )

@@ -95,8 +95,12 @@ with primary key `id`, one transaction creates:
   the source table has a primary key; without one, fact rows are insert-only.
 
 Object names all come from `pg_star_schema.naming`, which is how `status` and `drop`
-find every object later from the table name alone. All SQL is composed with
-`psycopg.sql` - identifiers are always quoted, never string-formatted.
+find every object later from the table name alone. A name that would exceed
+Postgres's 63-byte identifier limit is shortened to a prefix plus a short hash of
+the full name (`naming.bounded`), so long table and column names never collide
+after Postgres's own silent truncation - and the same inputs always give the same
+name. All SQL is composed with `psycopg.sql` - identifiers are always quoted, never
+string-formatted.
 
 ## CLI
 
@@ -139,7 +143,8 @@ yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-
 plans), `unmirrored_rows_sql`, `orphaned_rows_sql` (the two `check` queries),
 `orphaned_rows_delete_sql` (the `repair` delete),
 `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`,
-`fact_index_ddl`, `dimension_upsert_sql`,
+`fact_index_ddl`, `dimension_upsert_sql`, the `*_name` functions of
+`pg_star_schema.naming` plus `bounded`,
 `sync_function_ddl`, `sync_trigger_ddl`, `sync_update_function_ddl`,
 `sync_update_trigger_ddl`, `sync_delete_function_ddl`, `sync_delete_trigger_ddl`, and
 the `drop_*_ddl` counterparts.

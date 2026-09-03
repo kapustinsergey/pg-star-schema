@@ -91,7 +91,10 @@ def star_schema_status(
     Reports the fact table and every `<table>_dim_*` table found, each with an
     exact `count(*)`, plus whether each sync trigger is installed. Discovery
     goes by the naming scheme, so it works whether or not the source table
-    still exists.
+    still exists. NOTE: dimension tables are matched on the `<table>_dim_`
+    prefix; a source table name longer than about 50 bytes pushes that prefix
+    past the identifier limit (see `naming.bounded`), and its dimension tables
+    are then not listed here - `drop` still finds them, from the column names.
 
     `estimate=True` reads the planner's row estimate (`pg_class.reltuples`,
     maintained by vacuum and analyze) instead of counting - instant on large

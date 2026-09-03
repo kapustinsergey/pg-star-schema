@@ -19,7 +19,9 @@ from pg_star_schema.status import StarSchemaStatus, TableStatus, star_schema_sta
 from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns, get_primary_key
 from pg_star_schema.naming import (
+    bounded,
     dimension_table_name,
+    fact_index_name,
     fact_table_name,
     source_key_column_name,
     sync_delete_function_name,
@@ -85,7 +87,9 @@ __all__ = [
     "dimension_table_ddl",
     "fact_table_ddl",
     "fact_index_ddl",
+    "bounded",
     "dimension_table_name",
+    "fact_index_name",
     "fact_table_name",
     "source_key_column_name",
     "dimension_upsert_sql",
