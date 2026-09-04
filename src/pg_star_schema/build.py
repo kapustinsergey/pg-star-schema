@@ -3,6 +3,7 @@ from psycopg import sql
 
 from pg_star_schema.ddl import dimension_table_ddl, fact_index_ddl, fact_table_ddl
 from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
+from pg_star_schema.naming import dimension_table_name, fact_table_name, source_key_column_name
 from pg_star_schema.trigger import (
     sync_delete_function_ddl,
     sync_delete_trigger_ddl,
@@ -37,6 +38,68 @@ def build_statements(
     return statements
 
 
+def configuration_drift(
+    conn: psycopg.Connection,
+    table: str,
+    dimensioned: list[Column],
+    key_columns: list[Column],
+    schema: str = "public",
+) -> list[str]:
+    """How the star schema already in the database differs from the one a
+    build with these columns would create. Empty when they agree, or when no
+    star schema exists yet.
+
+    `create table if not exists` leaves an existing fact or dimension table
+    exactly as it is, so a build with a different column set, a different
+    source primary key, or changed source types would silently keep the old
+    tables while installing triggers written for the new layout. This is the
+    check that turns that into an error. It compares the fact table's columns
+    (one `<column>_id` per dimension, one `source_<key>` per key column, with
+    the key's type) and each dimension table's `value` type against the
+    source table as it is now.
+    """
+    drift = []
+    fact_columns = {column.name: column for column in get_columns(conn, fact_table_name(table), schema)}
+    if fact_columns:
+        expected = {"id": "bigint"}
+        expected.update({f"{column.name}_id": "bigint" for column in dimensioned})
+        expected.update({source_key_column_name(key.name): key.data_type for key in key_columns})
+        missing = sorted(set(expected) - set(fact_columns))
+        extra = sorted(set(fact_columns) - set(expected))
+        if missing:
+            drift.append(f"fact table lacks column(s) {', '.join(missing)}")
+        if extra:
+            drift.append(f"fact table has extra column(s) {', '.join(extra)}")
+        for name, data_type in expected.items():
+            existing = fact_columns.get(name)
+            if existing is not None and existing.data_type != data_type:
+                drift.append(f"fact column {name} is {existing.data_type}, source now needs {data_type}")
+    for column in dimensioned:
+        dimension = dimension_table_name(table, column.name)
+        value = next((c for c in get_columns(conn, dimension, schema) if c.name == "value"), None)
+        if value is not None and value.data_type != column.data_type:
+            drift.append(f"{dimension}.value is {value.data_type}, source column is {column.data_type}")
+    return drift
+
+
+def check_configuration(
+    conn: psycopg.Connection,
+    table: str,
+    dimensioned: list[Column],
+    key_columns: list[Column],
+    schema: str = "public",
+) -> None:
+    """Raise ValueError, naming every difference, when `configuration_drift`
+    finds any - with the way out: drop the star schema and build it again."""
+    drift = configuration_drift(conn, table, dimensioned, key_columns, schema)
+    if drift:
+        raise ValueError(
+            f"star schema for {schema}.{table} already exists with a different configuration: "
+            + "; ".join(drift)
+            + ". Drop it (drop_star_schema / pg-star-schema drop) and build again"
+        )
+
+
 def build_star_schema(
     conn: psycopg.Connection,
     table: str,
@@ -58,9 +121,13 @@ def build_star_schema(
     gets one dimension row per fact row, which is pure overhead. Pass the columns
     you actually group by.
 
-    Every statement is idempotent (`create table if not exists`, `create or replace`),
-    so re-running against an existing star schema is safe. It does NOT backfill: only
-    rows inserted after this runs reach the fact table.
+    Re-running with the same columns is a no-op (`create table if not exists`,
+    `create or replace`). Re-running with a different set of columns, a different
+    source primary key, or changed source column types stops with a ValueError
+    naming the difference - `create table if not exists` would keep the old
+    tables under triggers written for the new layout - and the way out is
+    `drop_star_schema` followed by a fresh build. It does NOT backfill: only rows
+    inserted after this runs reach the fact table.
 
     NOTE: requires Postgres 14 or newer, for `create or replace trigger`.
     """
@@ -73,6 +140,7 @@ def build_star_schema(
         raise ValueError("at least one column must be dimensioned")
     by_name = {column.name: column for column in all_columns}
     key_columns = [by_name[name] for name in get_primary_key(conn, table, schema)]
+    check_configuration(conn, table, dimensioned, key_columns, schema)
 
     with conn.transaction(), conn.cursor() as cur:
         for statement in build_statements(table, dimensioned, key_columns, schema):

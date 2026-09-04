@@ -63,6 +63,14 @@ is deleted.
 Pick the columns you actually group by. Omitting `columns` dimensions every column, which
 gives a surrogate key or a timestamp one dimension row per fact row - pure overhead.
 
+Building again with the same columns changes nothing. Building again with a different
+set of columns, after the source table's primary key changed, or after a dimensioned
+column's type changed stops with an error that names each difference: `create table if
+not exists` would otherwise keep the old fact and dimension tables under triggers written
+for the new layout. The way forward is `drop_star_schema`, then a fresh build and
+backfill. `configuration_drift(conn, "orders", dimensioned, key_columns)` returns the
+same differences as a list, for a script that wants to decide for itself.
+
 `check_star_schema(conn, "orders")` compares the two sides by primary key and returns
 how many source rows have no fact row (`unmirrored`) and how many fact rows have no
 source row left (`orphaned`) - both zero means the star schema is in sync. Read-only
@@ -140,7 +148,8 @@ check finds drift there).
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command
-plans), `unmirrored_rows_sql`, `orphaned_rows_sql` (the two `check` queries),
+plans), `configuration_drift` / `check_configuration` (the pre-build comparison),
+`unmirrored_rows_sql`, `orphaned_rows_sql` (the two `check` queries),
 `orphaned_rows_delete_sql` (the `repair` delete),
 `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`,
 `fact_index_ddl`, `dimension_upsert_sql`, the `*_name` functions of

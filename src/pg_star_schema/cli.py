@@ -19,7 +19,7 @@ from pg_star_schema.backfill import (
     backfill_star_schema_batched,
     backfill_statements,
 )
-from pg_star_schema.build import build_star_schema, build_statements
+from pg_star_schema.build import build_star_schema, build_statements, check_configuration
 from pg_star_schema.check import (
     check_star_schema,
     orphaned_rows_delete_sql,
@@ -134,6 +134,10 @@ def _plan(
         return drop_statements(table, columns, schema, source_exists=bool(source_columns))
     dimensioned, key_columns = _introspect(conn, table, columns, schema)
     if command == "build":
+        # A real build refuses to run over a star schema built with other
+        # columns; the plan refuses the same way rather than print statements
+        # that would not execute.
+        check_configuration(conn, table, dimensioned, key_columns, schema)
         return build_statements(table, dimensioned, key_columns, schema)
     if command in ("check", "repair") and not key_columns:
         raise ValueError(

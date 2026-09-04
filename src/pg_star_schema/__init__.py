@@ -6,7 +6,12 @@ from pg_star_schema.backfill import (
     fact_backfill_batch_sql,
     fact_backfill_sql,
 )
-from pg_star_schema.build import build_star_schema, build_statements
+from pg_star_schema.build import (
+    build_star_schema,
+    build_statements,
+    check_configuration,
+    configuration_drift,
+)
 from pg_star_schema.check import (
     SyncCheck,
     check_star_schema,
@@ -56,6 +61,8 @@ from pg_star_schema.upsert import dimension_upsert_sql
 __all__ = [
     "build_star_schema",
     "build_statements",
+    "check_configuration",
+    "configuration_drift",
     "backfill_star_schema",
     "backfill_star_schema_batched",
     "backfill_statements",
