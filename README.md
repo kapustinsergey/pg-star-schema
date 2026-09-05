@@ -76,9 +76,16 @@ how many source rows have no fact row (`unmirrored`) and how many fact rows have
 source row left (`orphaned`) - both zero means the star schema is in sync. Read-only
 and exact, so it is two full scans; run it when drift is suspected, such as after a
 trigger was dropped or a backfill was interrupted. Requires a primary key.
+`check_star_schema(conn, "orders", values=True)` adds a third count, `stale`: fact rows
+that exist but point at a dimension value their source row no longer has - what an
+update made while the update trigger was missing leaves behind. It follows every
+`<column>_id` to its dimension for every row, so it is the most expensive of the three
+and off by default.
 `repair_star_schema(conn, "orders", columns=[...])` fixes what check reports, in one
 transaction: it mirrors the unmirrored rows (the backfill, which skips rows already
-present) and deletes the orphaned fact rows, and returns the drift it fixed.
+present) and deletes the orphaned fact rows, and returns the drift it fixed. With
+`values=True` it also re-points the stale rows at the dimension rows for their current
+values, adding those values to the dimensions first.
 
 To undo it all, `drop_star_schema(conn, "orders")` drops the triggers, the sync
 functions, the fact table, and the dimension tables - the source table is never touched.
@@ -121,7 +128,9 @@ pg-star-schema drop orders
 
 pg-star-schema status orders
 pg-star-schema check orders
+pg-star-schema check orders --values
 pg-star-schema repair orders customer status country
+pg-star-schema repair orders customer status country --values
 
 pg-star-schema build orders --dsn postgresql://localhost/mydb
 pg-star-schema build orders customer --dry-run
@@ -141,16 +150,18 @@ exported as `star_schema_status`); `status --estimate` uses the planner's row
 estimates instead of exact counts, instant on large tables. `check` prints the
 unmirrored and orphaned row counts and exits 0 when both are zero, 2 when they are
 not (1 stays the error exit), so a cron job can alert on drift. `repair` fixes what
-`check` reports - pass the same columns the star schema was built with. Both take
-`--dry-run` too: `check --dry-run` prints the two count queries, `repair --dry-run`
-prints the backfill and the orphan delete (a real run executes each side only when
-check finds drift there).
+`check` reports - pass the same columns the star schema was built with. `--values` on
+either adds the stale-row comparison and, for `repair`, the re-pointing. Both take
+`--dry-run` too: `check --dry-run` prints the count queries, `repair --dry-run` prints
+the backfill and the orphan delete (a real run executes each side only when check finds
+drift there), plus the dimension backfills and the re-pointing update with `--values`.
 
 The lower-level pieces are exported too, if you'd rather generate the SQL and run it
 yourself: `build_statements`, `backfill_statements`, `drop_statements` (the per-command
 plans), `configuration_drift` / `check_configuration` (the pre-build comparison),
-`unmirrored_rows_sql`, `orphaned_rows_sql` (the two `check` queries),
-`orphaned_rows_delete_sql` (the `repair` delete),
+`unmirrored_rows_sql`, `orphaned_rows_sql`, `stale_rows_sql` (the `check` queries),
+`orphaned_rows_delete_sql`, `stale_rows_update_sql` (the `repair` writes),
+`dimensioned_columns` (which columns an existing star schema dimensions),
 `get_columns`, `get_primary_key`, `dimension_table_ddl`, `fact_table_ddl`,
 `fact_index_ddl`, `dimension_upsert_sql`, the `*_name` functions of
 `pg_star_schema.naming` plus `bounded`,

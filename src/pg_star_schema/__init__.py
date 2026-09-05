@@ -15,9 +15,13 @@ from pg_star_schema.build import (
 from pg_star_schema.check import (
     SyncCheck,
     check_star_schema,
+    dimensioned_columns,
     orphaned_rows_delete_sql,
     orphaned_rows_sql,
     repair_star_schema,
+    stale_rows_repair_statements,
+    stale_rows_sql,
+    stale_rows_update_sql,
     unmirrored_rows_sql,
 )
 from pg_star_schema.status import StarSchemaStatus, TableStatus, star_schema_status
@@ -75,6 +79,10 @@ __all__ = [
     "SyncCheck",
     "unmirrored_rows_sql",
     "orphaned_rows_sql",
+    "dimensioned_columns",
+    "stale_rows_sql",
+    "stale_rows_update_sql",
+    "stale_rows_repair_statements",
     "orphaned_rows_delete_sql",
     "drop_statements",
     "dimension_backfill_sql",

@@ -22,9 +22,12 @@ from pg_star_schema.backfill import (
 from pg_star_schema.build import build_star_schema, build_statements, check_configuration
 from pg_star_schema.check import (
     check_star_schema,
+    dimensioned_columns,
     orphaned_rows_delete_sql,
     orphaned_rows_sql,
     repair_star_schema,
+    stale_rows_repair_statements,
+    stale_rows_sql,
     unmirrored_rows_sql,
 )
 from pg_star_schema.introspect import Column, get_columns, get_primary_key, resolve_columns
@@ -80,7 +83,13 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_argument("table", help="source table name")
     sub.add_argument("--dsn", default="", help="libpq connection string; empty uses PG* environment variables")
     sub.add_argument("--schema", default="public", help="schema of the source table (default: public)")
-    sub.add_argument("--dry-run", action="store_true", help="print the two count queries without executing anything")
+    sub.add_argument("--dry-run", action="store_true", help="print the count queries without executing anything")
+    sub.add_argument(
+        "--values",
+        action="store_true",
+        help="also count fact rows pointing at dimension values their source row no longer has"
+        " (a third pass joining every dimension)",
+    )
     repair_help = "fix what check reports: mirror the unmirrored source rows, delete the orphaned fact rows"
     sub = subparsers.add_parser("repair", help=repair_help, description=repair_help)
     sub.add_argument("table", help="source table name")
@@ -96,6 +105,12 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print the backfill and orphan-delete SQL without executing anything"
         " (a real run executes each side only when check finds drift there)",
+    )
+    sub.add_argument(
+        "--values",
+        action="store_true",
+        help="also re-point fact rows whose dimension values their source row no longer has"
+        " (check --values), adding the current values to the dimensions first",
     )
     return parser
 
@@ -122,6 +137,7 @@ def _plan(
     table: str,
     columns: list[str] | None,
     schema: str,
+    values: bool = False,
 ) -> list[sql.Composed]:
     if command == "drop":
         source_columns = get_columns(conn, table, schema)
@@ -145,14 +161,22 @@ def _plan(
             "without one fact rows are not linked to source rows"
         )
     if command == "check":
-        return [
+        plan = [
             unmirrored_rows_sql(table, key_columns, schema),
             orphaned_rows_sql(table, key_columns, schema),
         ]
+        if values:
+            plan.append(stale_rows_sql(table, dimensioned_columns(conn, table, schema), key_columns, schema))
+        return plan
     if command == "repair":
-        return backfill_statements(table, dimensioned, key_columns, schema) + [
+        plan = backfill_statements(table, dimensioned, key_columns, schema) + [
             orphaned_rows_delete_sql(table, key_columns, schema)
         ]
+        if values:
+            plan += stale_rows_repair_statements(
+                table, dimensioned_columns(conn, table, schema), key_columns, schema
+            )
+        return plan
     return backfill_statements(table, dimensioned, key_columns, schema)
 
 
@@ -168,7 +192,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with psycopg.connect(args.dsn) as conn:
             if getattr(args, "dry_run", False):
-                for statement in _plan(conn, args.command, args.table, columns, args.schema):
+                plan = _plan(conn, args.command, args.table, columns, args.schema, getattr(args, "values", False))
+                for statement in plan:
                     print(statement.as_string(conn) + ";")
                 return 0
             if args.command == "build":
@@ -207,17 +232,23 @@ def main(argv: list[str] | None = None) -> int:
                 ):
                     print(f"{label} trigger: {'installed' if installed else 'missing'}")
             elif args.command == "check":
-                check = check_star_schema(conn, args.table, args.schema)
+                check = check_star_schema(conn, args.table, args.schema, values=args.values)
                 print(f"unmirrored source rows: {check.unmirrored}")
                 print(f"orphaned fact rows: {check.orphaned}")
+                if check.stale is not None:
+                    print(f"stale fact rows: {check.stale}")
                 if not check.in_sync:
                     return 2
             elif args.command == "repair":
-                fixed = repair_star_schema(conn, args.table, columns, args.schema)
+                fixed = repair_star_schema(conn, args.table, columns, args.schema, values=args.values)
                 if fixed.in_sync:
                     print(f"{args.schema}.{args.table} already in sync")
                 else:
-                    print(f"mirrored {fixed.unmirrored} source rows, removed {fixed.orphaned} orphaned fact rows")
+                    stale = f", re-pointed {fixed.stale} stale fact rows" if fixed.stale is not None else ""
+                    print(
+                        f"mirrored {fixed.unmirrored} source rows, "
+                        f"removed {fixed.orphaned} orphaned fact rows{stale}"
+                    )
             else:
                 drop_star_schema(conn, args.table, columns, args.schema)
                 print(f"dropped star schema for {args.schema}.{args.table}")
