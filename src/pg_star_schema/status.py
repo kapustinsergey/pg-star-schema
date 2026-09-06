@@ -3,7 +3,9 @@ from dataclasses import dataclass
 import psycopg
 from psycopg import sql
 
+from pg_star_schema.introspect import get_columns
 from pg_star_schema.naming import (
+    dimension_table_name,
     fact_table_name,
     sync_delete_trigger_name,
     sync_trigger_name,
@@ -80,6 +82,36 @@ def _trigger_installed(conn: psycopg.Connection, table: str, name: str, schema: 
         return cur.fetchone() is not None
 
 
+def _dimension_names(conn: psycopg.Connection, table: str, schema: str) -> list[str]:
+    """The dimension tables that exist for `table`, in fact-column order.
+
+    Every `<column>_id` column of the fact table (other than `id`) names a
+    dimension; the ones whose table exists are returned. With no fact table
+    to read, falls back to every `<table>_dim_*` table by name prefix.
+    """
+    fact_columns = get_columns(conn, fact_table_name(table), schema)
+    with conn.cursor() as cur:
+        if fact_columns:
+            candidates = [
+                dimension_table_name(table, column.name[:-3])
+                for column in fact_columns
+                if column.name != "id" and column.name.endswith("_id")
+            ]
+            cur.execute(
+                "select table_name from information_schema.tables "
+                "where table_schema = %s and table_name = any(%s)",
+                (schema, candidates),
+            )
+            existing = {name for (name,) in cur.fetchall()}
+            return [name for name in candidates if name in existing]
+        cur.execute(
+            "select table_name from information_schema.tables "
+            "where table_schema = %s and table_name like %s order by table_name",
+            (schema, f"{_like_escape(table)}\\_dim\\_%"),
+        )
+        return [name for (name,) in cur.fetchall()]
+
+
 def star_schema_status(
     conn: psycopg.Connection,
     table: str,
@@ -88,13 +120,13 @@ def star_schema_status(
 ) -> StarSchemaStatus:
     """What of the star schema for `table` currently exists.
 
-    Reports the fact table and every `<table>_dim_*` table found, each with an
+    Reports the fact table and every dimension table found, each with an
     exact `count(*)`, plus whether each sync trigger is installed. Discovery
     goes by the naming scheme, so it works whether or not the source table
-    still exists. NOTE: dimension tables are matched on the `<table>_dim_`
-    prefix; a source table name longer than about 50 bytes pushes that prefix
-    past the identifier limit (see `naming.bounded`), and its dimension tables
-    are then not listed here - `drop` still finds them, from the column names.
+    still exists: the fact table's `<column>_id` columns name the dimensions
+    (through `naming.dimension_table_name`, so bounded long names are found
+    too); without a fact table, any `<table>_dim_*` table left behind is
+    listed instead.
 
     `estimate=True` reads the planner's row estimate (`pg_class.reltuples`,
     maintained by vacuum and analyze) instead of counting - instant on large
@@ -102,26 +134,13 @@ def star_schema_status(
     back to the exact count.
     """
     fact_name = fact_table_name(table)
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            select table_name
-            from information_schema.tables
-            where table_schema = %s and (table_name = %s or table_name like %s)
-            order by table_name
-            """,
-            (schema, fact_name, f"{_like_escape(table)}\\_dim\\_%"),
-        )
-        names = [name for (name,) in cur.fetchall()]
-
     fact = None
-    dimensions = []
-    for name in names:
-        table_status = TableStatus(name=name, rows=_table_rows(conn, name, schema, estimate))
-        if name == fact_name:
-            fact = table_status
-        else:
-            dimensions.append(table_status)
+    if get_columns(conn, fact_name, schema):
+        fact = TableStatus(name=fact_name, rows=_table_rows(conn, fact_name, schema, estimate))
+    dimensions = [
+        TableStatus(name=name, rows=_table_rows(conn, name, schema, estimate))
+        for name in _dimension_names(conn, table, schema)
+    ]
 
     return StarSchemaStatus(
         fact=fact,
