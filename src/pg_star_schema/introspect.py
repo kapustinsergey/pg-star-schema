@@ -18,7 +18,10 @@ class Column:
 def resolve_columns(all_columns: list[Column], names: list[str] | None) -> list[Column]:
     """The Column values for `names`, in the given order; all of them for None.
 
-    Raises ValueError naming the missing columns instead of a bare KeyError.
+    Raises ValueError naming the missing columns instead of a bare KeyError,
+    and naming any column listed more than once - the fact table would
+    otherwise get the same `<column>_id` column twice and fail with a raw
+    Postgres "column specified more than once" error instead of a clear one.
     """
     if names is None:
         return all_columns
@@ -26,6 +29,14 @@ def resolve_columns(all_columns: list[Column], names: list[str] | None) -> list[
     missing = [name for name in names if name not in by_name]
     if missing:
         raise ValueError(f"no such column(s) on the source table: {', '.join(missing)}")
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for name in names:
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    if duplicates:
+        raise ValueError(f"column(s) listed more than once: {', '.join(sorted(duplicates))}")
     return [by_name[name] for name in names]
 
 
